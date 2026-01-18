@@ -7,7 +7,142 @@ The initial version will be a **Streamlit app** for self-study, with the ability
 
 AI is **not part of the learning loop**; it is only used offline to help **build and enrich the lexicon**.
 
----
+
+## Learning Algorithm
+
+This application uses a **forgetting-curve–based spaced repetition algorithm**, inspired by the FSRS (Free Spaced Repetition Scheduler) family of models.
+
+The goal is to maximize **long-term retention (months to years)** while:
+- the set of items grows continuously,
+- study time remains limited,
+- and different types of language knowledge are practiced.
+
+The system replaces fixed review intervals or random sampling with **adaptive scheduling based on predicted forgetting**.
+
+### Core principle
+
+Items are reviewed when they are **close to being forgotten**, not according to fixed time schedules.
+
+For each item, the algorithm estimates the probability that the user could still recall it *right now*.  
+When this probability drops below a configurable threshold, the item becomes due for review.
+
+This balances efficiency (fewer unnecessary reviews) with robustness (avoiding full forgetting).
+
+### Unit of learning
+
+The basic unit scheduled by the algorithm is a **card**, defined as:
+
+> **(exercise type × prompt × expected answer)**
+
+Examples:
+- `(meaning, "verrekijker", "binoculars")`
+- `(article, "verrekijker", "de")`
+- `(perfectum, "lopen", "gelopen")`
+- `(prepositions, "wachten", "op")`
+
+Each card is tracked **independently**, even if multiple cards reference the same word.
+
+This allows different types of knowledge (semantics, grammar, production) to have **separate learning trajectories and forgetting behavior**.
+
+### Memory state per card
+
+Each card maintains a small internal memory state:
+
+- **Stability (S)**  
+  Represents how slowly the card is forgotten. Higher stability leads to longer intervals between reviews.
+
+- **Difficulty (D)**  
+  Represents how hard this card is for the user. More difficult cards gain stability more slowly.
+
+- **Last review time**  
+  Timestamp of the most recent review attempt.
+
+From these values, the algorithm computes:
+
+- **Retrievability (R)**  
+  The estimated probability that the user could recall the card at the current time.
+
+
+### Forgetting model (conceptual)
+
+Retrievability decreases smoothly over time according to a forgetting curve:
+
+- Immediately after a successful recall, retrievability is high
+- As time passes, retrievability decays
+- Cards with higher stability decay more slowly
+
+The model parameters are **not fixed**:
+- Successful recall increases stability
+- Forgotten items reduce stability
+- Difficulty moderates how quickly stability changes
+
+This allows the algorithm to adapt continuously to the learner.
+
+### Feedback and learning updates
+
+After each review, the card’s memory state is updated based on user feedback.
+
+Minimum supported feedback:
+- **Remembered**
+- **Forgotten**
+
+Optional (recommended) extensions:
+- Graded feedback (e.g. Again / Hard / Good / Easy)
+- Response time (RT), stored for potential future use
+
+Effects:
+- Successful recall → stability increases
+- Forgotten recall → stability decreases
+- Difficulty is updated based on consistency and ease of recall
+
+Importantly:
+- A failure does **not** reset learning from scratch
+- Previously accumulated learning still contributes to future scheduling
+
+### Scheduling rule
+
+A card becomes **due** when its predicted retrievability falls below a target threshold  
+(e.g. 70%).
+
+At each study session:
+
+1. Compute retrievability for all cards with review history
+2. Select cards with retrievability ≤ target threshold
+3. Rank due cards from lowest to highest retrievability  
+   (most at risk of forgetting first)
+4. Present cards in that order
+
+This replaces random presentation with **risk-based prioritization**.
+
+### New cards (no review history)
+
+Cards that have never been reviewed:
+- Do not yet have reliable stability estimates
+- Are treated as high priority but are **rate-limited**
+  (e.g. a maximum number of new cards per day or session)
+
+New cards start with conservative default parameters and adapt quickly after a few reviews.
+
+### Multiple exercise types
+
+Different exercise types are expected to have different difficulty and forgetting dynamics
+(e.g. recognizing a word vs producing a grammatical form).
+
+Therefore:
+- Each exercise type maintains its **own memory state**
+- Learning progress does not automatically transfer across exercise types
+- The algorithm can adapt separately to each form of knowledge
+
+### Design goals
+
+This learning algorithm is designed to:
+
+- Support retention over long time horizons (months to years)
+- Scale from small to large vocabularies
+- Handle continuous introduction of new material
+- Avoid arbitrary fixed schedules
+- Adapt to individual learner behavior
+
 
 ## High-Level Architecture
 

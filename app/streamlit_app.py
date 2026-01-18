@@ -8,6 +8,7 @@ import streamlit as st
 from datetime import datetime, timezone
 
 from core import scheduler, log_repo, lexicon_repo
+from core.log_repo import FeedbackGrade
 
 # Initialize database
 log_repo.init_db()
@@ -33,6 +34,10 @@ if "current_word" not in st.session_state:
     st.session_state.current_word = None
 if "show_answer" not in st.session_state:
     st.session_state.show_answer = False
+if "session_batch" not in st.session_state:
+    st.session_state.session_batch = []  # List of (lemma, pos) tuples
+if "session_position" not in st.session_state:
+    st.session_state.session_position = 0
 if "session_count" not in st.session_state:
     st.session_state.session_count = 0
 if "session_correct" not in st.session_state:
@@ -41,8 +46,8 @@ if "start_time" not in st.session_state:
     st.session_state.start_time = None
 
 
-def load_next_word():
-    """Load the next word from the scheduler."""
+def start_new_session():
+    """Start a new session with a pre-computed batch of words."""
     # Get filter settings
     tag_filter = st.session_state.get("tag_filter")
     if tag_filter == "All":
@@ -52,20 +57,42 @@ def load_next_word():
     counts = get_word_counts()
     use_enriched = counts["enriched"] > 0
 
-    # Select next word (exclude the one we just reviewed)
-    word = scheduler.select_next_word(
+    # Pre-compute session batch
+    batch = scheduler.start_session(
+        size=20,
+        exercise_type='word_translation',
         enriched_only=use_enriched,
         tag=tag_filter,
-        exclude_recent=True
+        max_new_cards=5  # 5 new cards per session
     )
+
+    st.session_state.session_batch = batch
+    st.session_state.session_position = 0
+    st.session_state.session_count = 0
+    st.session_state.session_correct = 0
+
+    # Load first word
+    if batch:
+        load_next_word()
+
+
+def load_next_word():
+    """Load the next word from the current session batch."""
+    if st.session_state.session_position >= len(st.session_state.session_batch):
+        # Session complete
+        st.session_state.current_word = None
+        return
+
+    lemma, pos = st.session_state.session_batch[st.session_state.session_position]
+    word = lexicon_repo.get_word(lemma, pos)
 
     st.session_state.current_word = word
     st.session_state.show_answer = False
     st.session_state.start_time = datetime.now(timezone.utc)
 
 
-def log_and_next(remembered: bool):
-    """Log the current review result and load the next word."""
+def log_and_next(feedback_grade: FeedbackGrade):
+    """Log the current review result and move to next word in session."""
     if st.session_state.current_word:
         word = st.session_state.current_word
 
@@ -80,16 +107,19 @@ def log_and_next(remembered: bool):
             lemma=word["lemma"],
             pos=word["pos"],
             exercise_type="word_translation",  # MVP: only Dutch→English
-            remembered=remembered,
+            feedback_grade=feedback_grade,
             latency_ms=latency_ms
         )
 
-        # Update session stats
+        # Update session stats (count anything other than AGAIN as correct)
         st.session_state.session_count += 1
-        if remembered:
+        if feedback_grade != FeedbackGrade.AGAIN:
             st.session_state.session_correct += 1
 
-    # Load next word
+        # Move to next word in batch
+        st.session_state.session_position += 1
+
+    # Load next word from batch
     load_next_word()
 
 
@@ -101,19 +131,26 @@ st.title("🇳🇱 Dutch Vocabulary Trainer")
 with st.sidebar:
     st.header("Settings")
 
-    # Tag filter
+    # Tag filter (only editable between sessions)
     all_tags = ["All"] + lexicon_repo.get_all_tags()
     st.selectbox(
         "Filter by tag:",
         options=all_tags,
         key="tag_filter",
-        on_change=load_next_word
+        disabled=st.session_state.current_word is not None
     )
 
     st.divider()
 
     # Session stats
     st.header("Session Stats")
+    if st.session_state.session_batch:
+        # Show progress
+        total = len(st.session_state.session_batch)
+        current = st.session_state.session_position
+        st.progress(current / total if total > 0 else 0)
+        st.caption(f"Progress: {current}/{total} words")
+
     st.metric("Words reviewed", st.session_state.session_count)
     if st.session_state.session_count > 0:
         accuracy = st.session_state.session_correct / st.session_state.session_count * 100
@@ -133,11 +170,24 @@ with st.sidebar:
 
 # Main content area
 if st.session_state.current_word is None:
-    # First load
+    # Session not started or session complete
     st.markdown("<br>" * 3, unsafe_allow_html=True)  # Add spacing
-    if st.button("Start Session", type="primary", use_container_width=True):
-        load_next_word()
-        st.rerun()
+
+    if st.session_state.session_count > 0:
+        # Session just finished
+        st.success(f"🎉 Session complete! You reviewed {st.session_state.session_count} words.")
+        if st.session_state.session_count > 0:
+            accuracy = st.session_state.session_correct / st.session_state.session_count * 100
+            st.info(f"Accuracy: {accuracy:.1f}%")
+
+        if st.button("Start New Session", type="primary", use_container_width=True):
+            start_new_session()
+            st.rerun()
+    else:
+        # First session
+        if st.button("Start Session", type="primary", use_container_width=True):
+            start_new_session()
+            st.rerun()
 else:
     word = st.session_state.current_word
 
@@ -215,19 +265,29 @@ else:
             unsafe_allow_html=True
         )
 
-        # User feedback buttons
+        # User feedback buttons (graded)
         st.markdown("<br>", unsafe_allow_html=True)
-        st.markdown("**Did you remember this word?**")
-        col1, col2 = st.columns(2)
+        st.markdown("**How well did you remember this word?**")
+        col1, col2, col3, col4 = st.columns(4)
 
         with col1:
-            if st.button("✅ I knew this", use_container_width=True, type="primary"):
-                log_and_next(remembered=True)
+            if st.button("❌ Again", use_container_width=True, help="Completely forgot"):
+                log_and_next(FeedbackGrade.AGAIN)
                 st.rerun()
 
         with col2:
-            if st.button("❌ I didn't know", use_container_width=True):
-                log_and_next(remembered=False)
+            if st.button("😰 Hard", use_container_width=True, help="Remembered with difficulty"):
+                log_and_next(FeedbackGrade.HARD)
+                st.rerun()
+
+        with col3:
+            if st.button("👍 Medium", use_container_width=True, type="primary", help="Remembered normally"):
+                log_and_next(FeedbackGrade.MEDIUM)
+                st.rerun()
+
+        with col4:
+            if st.button("✨ Easy", use_container_width=True, help="Remembered easily"):
+                log_and_next(FeedbackGrade.EASY)
                 st.rerun()
 
         # Tell me more section
