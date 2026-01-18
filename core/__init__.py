@@ -1,1 +1,1 @@
-"""Core data models and database access for Dutch vocabulary trainer."""
+# Core modules for Dutch Vocabulary Trainer

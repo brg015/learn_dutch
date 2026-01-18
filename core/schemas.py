@@ -18,6 +18,14 @@ from pydantic import BaseModel, Field
 MAX_EXAMPLES_PER_FORM = 2  # Maximum number of example sentences per form/tense
 
 
+class EntryType(str, Enum):
+    """Type of lexicon entry."""
+    WORD = "word"           # Single word
+    PHRASE = "phrase"       # Multi-word expression
+    IDIOM = "idiom"         # Idiomatic expression (future)
+    COLLOCATION = "collocation"  # Common word pairing (future)
+
+
 class PartOfSpeech(str, Enum):
     """Part of speech categories."""
     NOUN = "noun"
@@ -115,7 +123,7 @@ class ImportData(BaseModel):
     """Preserves the original import data from CSV."""
     imported_word: str = Field(..., description="The Dutch word as imported (may not be lemma)")
     imported_translation: str = Field(..., description="The English translation as imported")
-    imported_at: datetime = Field(default_factory=datetime.utcnow, description="When this was imported")
+    imported_at: datetime = Field(default_factory=lambda: datetime.now(datetime.timezone.utc), description="When this was imported")
 
 
 # ---- AI Enrichment Metadata ----
@@ -140,6 +148,9 @@ class LexiconEntry(BaseModel):
     """
     # Import tracking (preserves original data)
     import_data: Optional[ImportData] = None
+
+    # Entry classification
+    entry_type: EntryType = Field(default=EntryType.WORD, description="Type of entry (word vs phrase)")
 
     # Required fields
     lemma: str = Field(..., description="Dictionary form of the word (may be normalized from imported_word)")

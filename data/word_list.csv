@@ -1,87 +1,87 @@
 dutch,english,added_to_lexicon
-tevreden,satisfied,False
-voorzichtig,careful,False
-sip,a bit sad,False
-slap,weak / no energy,False
-ongerust,anxious,False
-ondertiteling,subtitles,False
-behandelen,to deal with / to treat,False
-benieuwd,curious,False
-samenvatting,summary,False
-onhandig,awkward / clumsy,False
-huisgenoten,housemates,False
-trouwens,by the way,False
-zuchten,to sigh,False
-voorlopig,for the time being,False
-voeren,to feed / to conduct,False
-voren,forward,False
-asiel,asylum / shelter,False
-lastig,annoying / difficult,False
-vrolijk,cheerful,False
-hoe kom je daarbij,what makes you think that,False
-op zoek zijn (naar),to be looking for,False
-teleurgesteld,disappointed,False
-(on)zin,(non)sense,False
-opschieten,hurry up,False
-het karton,cardboard,False
-het fluweel,velvet,False
-het ijzer,iron,False
-glad,smooth / slippery,False
-vervoeren,to transport,False
-goederen,goods,False
-onvoldoende,insufficient,False
-letterkunde,literature,False
-heelal,universe,False
-oneindig,endless / infinite,False
-beleid,policy,False
-geldig,valid,False
-eenvoudig,simple,False
-vlug,quick(ly),False
-afscheid,farewell,False
-aandacht,attention,False
-alvast,already / in advance,False
-meerdere,several,False
-voorstellen,to introduce / to propose,False
-kletsen,to chat,False
-beduusd,stunned / bewildered,False
-leerzaam,educational,False
-omgeving,environment / surroundings,False
-ingewikkeld,complicated,False
-eigenlijk,actually,False
-opgewekt,cheerful / upbeat,False
-bos bloemen,bunch of flowers,False
-bekennen,to confess,False
-onverwachts,unexpected,False
-toegeven,to admit,False
-opgelucht,relieved,False
-vervelend,annoying / unpleasant,False
-ontroerd,emotionally moved,False
-verveeld,bored,False
-kwaad,angry,False
-zenuwachtig,nervous,False
-ongemakkelijk,uncomfortable,False
-bovendien,moreover,False
-op m’n gemak,comfortable / at ease,False
-gemakkelijk,easy / convenient,False
-hoog opgeleid,highly educated,False
-vrijwilliger,volunteer,False
-onderzoek blijkt,study shows,False
-blijken uit,to be evident from,False
-een op de vijf,one in five,False
-tussen ons houden,to keep between us,False
-leugenaar,liar,False
-vies,dirty,False
-huishouden,household (chores),False
-verlopen,to expire / to proceed,False
-strak,tight / sleek,False
-te mooi om waar te zijn,too good to be true,False
-schreeuwen,to scream,False
-nauwelijks,hardly,False
-amper,barely,False
-alleen maar,only / merely,False
-pas,only just / not until,False
-bevatten,to contain / to comprise,False
-getroost,comforted,False
-overtuigen,to convince,False
-zich ergeren,to be annoyed,False
-reageren (op),to react (to),False
+tevreden,satisfied,True
+voorzichtig,careful,True
+sip,a bit sad,True
+slap,weak / no energy,True
+ongerust,anxious,True
+ondertiteling,subtitles,True
+behandelen,to deal with / to treat,True
+benieuwd,curious,True
+samenvatting,summary,True
+onhandig,awkward / clumsy,True
+huisgenoten,housemates,True
+trouwens,by the way,True
+zuchten,to sigh,True
+voorlopig,for the time being,True
+voeren,to feed / to conduct,True
+voren,forward,True
+asiel,asylum / shelter,True
+lastig,annoying / difficult,True
+vrolijk,cheerful,True
+hoe kom je daarbij,what makes you think that,True
+op zoek zijn (naar),to be looking for,True
+teleurgesteld,disappointed,True
+(on)zin,(non)sense,True
+opschieten,hurry up,True
+het karton,cardboard,True
+het fluweel,velvet,True
+het ijzer,iron,True
+glad,smooth / slippery,True
+vervoeren,to transport,True
+goederen,goods,True
+onvoldoende,insufficient,True
+letterkunde,literature,True
+heelal,universe,True
+oneindig,endless / infinite,True
+beleid,policy,True
+geldig,valid,True
+eenvoudig,simple,True
+vlug,quick(ly),True
+afscheid,farewell,True
+aandacht,attention,True
+alvast,already / in advance,True
+meerdere,several,True
+voorstellen,to introduce / to propose,True
+kletsen,to chat,True
+beduusd,stunned / bewildered,True
+leerzaam,educational,True
+omgeving,environment / surroundings,True
+ingewikkeld,complicated,True
+eigenlijk,actually,True
+opgewekt,cheerful / upbeat,True
+bos bloemen,bunch of flowers,True
+bekennen,to confess,True
+onverwachts,unexpected,True
+toegeven,to admit,True
+opgelucht,relieved,True
+vervelend,annoying / unpleasant,True
+ontroerd,emotionally moved,True
+verveeld,bored,True
+kwaad,angry,True
+zenuwachtig,nervous,True
+ongemakkelijk,uncomfortable,True
+bovendien,moreover,True
+op m’n gemak,comfortable / at ease,True
+gemakkelijk,easy / convenient,True
+hoog opgeleid,highly educated,True
+vrijwilliger,volunteer,True
+onderzoek blijkt,study shows,True
+blijken uit,to be evident from,True
+een op de vijf,one in five,True
+tussen ons houden,to keep between us,True
+leugenaar,liar,True
+vies,dirty,True
+huishouden,household (chores),True
+verlopen,to expire / to proceed,True
+strak,tight / sleek,True
+te mooi om waar te zijn,too good to be true,True
+schreeuwen,to scream,True
+nauwelijks,hardly,True
+amper,barely,True
+alleen maar,only / merely,True
+pas,only just / not until,True
+bevatten,to contain / to comprise,True
+getroost,comforted,True
+overtuigen,to convince,True
+zich ergeren,to be annoyed,True
+reageren (op),to react (to),True

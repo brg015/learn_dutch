@@ -20,7 +20,7 @@ from dotenv import load_dotenv
 from pymongo import MongoClient
 from pymongo.errors import DuplicateKeyError
 
-from core.schemas import LexiconEntry, EnrichmentMetadata, ImportData, PartOfSpeech
+from core.schemas import LexiconEntry, EnrichmentMetadata, ImportData, PartOfSpeech, EntryType
 
 # Load environment
 load_dotenv()
@@ -38,6 +38,34 @@ def parse_user_tags(tags_str: str) -> list[str]:
 
     tags = [tag.strip() for tag in str(tags_str).split(",")]
     return [tag for tag in tags if tag]
+
+
+def detect_entry_type(dutch: str) -> EntryType:
+    """
+    Detect if a Dutch entry is a word or phrase.
+
+    Rules:
+    - Has spaces AND doesn't start with "de " or "het " → PHRASE
+    - Otherwise → WORD
+
+    Args:
+        dutch: The Dutch word/phrase
+
+    Returns:
+        EntryType (WORD or PHRASE)
+    """
+    dutch_lower = dutch.strip().lower()
+
+    # Check if it has spaces
+    if " " not in dutch:
+        return EntryType.WORD
+
+    # Exception: starts with article (de/het) → it's a noun with article
+    if dutch_lower.startswith("de ") or dutch_lower.startswith("het "):
+        return EntryType.WORD
+
+    # Has spaces and not an article → it's a phrase
+    return EntryType.PHRASE
 
 
 def import_basic_words(
@@ -116,13 +144,19 @@ def import_basic_words(
             if user_tags:
                 print(f"  User tags: {', '.join(user_tags)}")
 
+            # Detect entry type (word vs phrase)
+            entry_type = detect_entry_type(dutch)
+            if entry_type == EntryType.PHRASE:
+                print(f"  Detected as PHRASE (multi-word expression)")
+
             # Create basic lexicon entry (no AI enrichment)
             entry = LexiconEntry(
                 import_data=ImportData(
                     imported_word=dutch,
                     imported_translation=english,
-                    imported_at=datetime.utcnow()
+                    imported_at=datetime.now(datetime.timezone.utc)
                 ),
+                entry_type=entry_type,
                 lemma=dutch,  # Use imported word as lemma for now
                 pos=PartOfSpeech.OTHER,  # Unknown until enriched
                 translations=[english],

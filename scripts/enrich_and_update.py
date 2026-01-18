@@ -63,7 +63,14 @@ def enrich_and_update(
     print(f"✓ Connected to MongoDB: {DB_NAME}.{COLLECTION_NAME}\n")
 
     # Build query for unenriched words
-    query = {"enrichment.enriched": False}
+    # Exclude phrases - they don't need AI enrichment
+    query = {
+        "enrichment.enriched": False,
+        "$or": [
+            {"entry_type": {"$exists": False}},  # Old entries without entry_type
+            {"entry_type": "word"}  # Only enrich words, not phrases
+        ]
+    }
 
     if user_tag_filter:
         query["user_tags"] = user_tag_filter
