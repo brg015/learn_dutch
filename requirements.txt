@@ -1,0 +1,14 @@
+# Core dependencies
+pydantic>=2.0
+pandas
+python-dotenv
+
+# AI
+openai>=1.0
+
+# Database
+pymongo
+motor  # async MongoDB driver (optional for now)
+
+# App
+streamlit
