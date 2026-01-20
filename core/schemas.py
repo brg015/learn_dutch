@@ -94,6 +94,10 @@ class VerbMetadata(BaseModel):
     separable: Optional[bool] = None
     separable_prefix: Optional[str] = None  # e.g., "op" in "opstaan"
 
+    # Irregularity flags (important for FSRS difficulty)
+    is_irregular_past: Optional[bool] = None  # True if past tense is irregular
+    is_irregular_participle: Optional[bool] = None  # True if past participle is irregular
+
     # Common prepositions used with this verb
     common_prepositions: list[str] = Field(
         default_factory=list,
@@ -144,8 +148,14 @@ class LexiconEntry(BaseModel):
     """
     A single word entry in the MongoDB lexicon.
 
-    One document per lemma + POS combination.
+    Each entry has a unique word_id to handle homonyms (e.g., 'bank' as financial institution vs couch).
     """
+    # Unique identifier (generated on import/creation)
+    word_id: Optional[str] = Field(
+        default=None,
+        description="Unique identifier for this word entry (UUID). Auto-generated if not provided."
+    )
+
     # Import tracking (preserves original data)
     import_data: Optional[ImportData] = None
 
@@ -155,6 +165,13 @@ class LexiconEntry(BaseModel):
     # Required fields
     lemma: str = Field(..., description="Dictionary form of the word (may be normalized from imported_word)")
     pos: PartOfSpeech = Field(default=PartOfSpeech.OTHER, description="Part of speech")
+
+    # Optional sense disambiguator for homonyms
+    sense: Optional[str] = Field(
+        default=None,
+        description="Disambiguates homonyms (e.g., 'bank (financial)' vs 'bank (couch)'). Usually None for unique lemma+pos."
+    )
+
     translations: list[str] = Field(default_factory=list, description="English translations")
 
     # Optional common fields
@@ -189,6 +206,7 @@ class AIEnrichedEntry(BaseModel):
     """
     lemma: str
     pos: PartOfSpeech
+    sense: Optional[str] = Field(default=None, description="Sense disambiguator for homonyms (usually None)")
     translations: list[str] = Field(..., min_length=1, description="At least one English translation")
     difficulty: CEFRLevel = CEFRLevel.UNKNOWN
     tags: list[str] = Field(default_factory=list, max_length=5, description="Max 5 semantic tags")

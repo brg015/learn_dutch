@@ -83,6 +83,9 @@ Instructions:
   - past participle (voltooid deelwoord)
   - auxiliary verb (hebben/zijn)
   - whether it's separable and the prefix if applicable
+  - irregularity flags:
+    * is_irregular_past: True if past tense doesn't follow regular -de/-te pattern
+    * is_irregular_participle: True if participle doesn't follow regular ge-...-d/t pattern
   - common prepositions used with the verb (e.g., denken aan, wachten op)
   - examples in present, past, and perfect tenses
   - examples should demonstrate prepositional usage where relevant

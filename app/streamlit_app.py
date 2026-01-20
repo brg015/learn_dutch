@@ -5,9 +5,10 @@ Simple review session interface for learning Dutch vocabulary.
 """
 
 import streamlit as st
+import uuid
 from datetime import datetime, timezone
 
-from core import scheduler, fsrs, lexicon_repo
+from core import session_builder, fsrs, lexicon_repo
 
 # Initialize database
 fsrs.init_db()
@@ -34,7 +35,7 @@ if "current_word" not in st.session_state:
 if "show_answer" not in st.session_state:
     st.session_state.show_answer = False
 if "session_batch" not in st.session_state:
-    st.session_state.session_batch = []  # List of (lemma, pos) tuples
+    st.session_state.session_batch = []  # List of word dicts
 if "session_position" not in st.session_state:
     st.session_state.session_position = 0
 if "session_count" not in st.session_state:
@@ -43,6 +44,8 @@ if "session_correct" not in st.session_state:
     st.session_state.session_correct = 0
 if "start_time" not in st.session_state:
     st.session_state.start_time = None
+if "session_id" not in st.session_state:
+    st.session_state.session_id = None
 
 
 def start_new_session():
@@ -53,11 +56,13 @@ def start_new_session():
         tag_filter = None
 
     # Create session using new three-pool scheduler
-    batch = scheduler.create_session(
+    batch = session_builder.create_session(
         exercise_type='word_translation',
         tag=tag_filter
     )
 
+    # Generate unique session ID for analytics
+    st.session_state.session_id = str(uuid.uuid4())
     st.session_state.session_batch = batch
     st.session_state.session_position = 0
     st.session_state.session_count = 0
@@ -94,13 +99,16 @@ def log_and_next(feedback_grade: fsrs.FeedbackGrade):
             elapsed = datetime.now(timezone.utc) - st.session_state.start_time
             latency_ms = int(elapsed.total_seconds() * 1000)
 
-        # Log the review
+        # Log the review with session context
         fsrs.log_review(
+            word_id=word["word_id"],
             lemma=word["lemma"],
             pos=word["pos"],
             exercise_type="word_translation",  # MVP: only Dutch→English
             feedback_grade=feedback_grade,
-            latency_ms=latency_ms
+            latency_ms=latency_ms,
+            session_id=st.session_state.session_id,
+            session_position=st.session_state.session_position
         )
 
         # Update session stats (count anything other than AGAIN as correct)

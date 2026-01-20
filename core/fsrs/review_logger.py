@@ -20,12 +20,15 @@ from core.fsrs.constants import FeedbackGrade
 
 
 def log_review(
+    word_id: str,
     lemma: str,
     pos: str,
     exercise_type: str,
     feedback_grade: FeedbackGrade,
     latency_ms: Optional[int] = None,
-    timestamp: Optional[datetime] = None
+    timestamp: Optional[datetime] = None,
+    session_id: Optional[str] = None,
+    session_position: Optional[int] = None
 ):
     """
     Log a review and update card state using FSRS algorithm.
@@ -40,22 +43,25 @@ def log_review(
     5. Save state and log event
 
     Args:
-        lemma: Word lemma
-        pos: Part of speech
+        word_id: Unique word identifier from MongoDB
+        lemma: Word lemma (for readability)
+        pos: Part of speech (for readability)
         exercise_type: Type of exercise
         feedback_grade: User feedback (AGAIN, HARD, MEDIUM, EASY)
         latency_ms: Response time in milliseconds (optional)
         timestamp: Review timestamp (defaults to now)
+        session_id: Optional session identifier (for analytics)
+        session_position: Optional position in session (for analytics)
     """
     if timestamp is None:
         timestamp = datetime.now(timezone.utc)
 
     # Load existing card state or initialize new card
-    card = persistence.load_card_state(lemma, pos, exercise_type)
+    card = persistence.load_card_state(word_id, exercise_type)
 
     if card is None:
         # New card - first review ever
-        card = memory_state.initialize_new_card(lemma, pos, exercise_type)
+        card = memory_state.initialize_new_card(word_id, lemma, pos, exercise_type)
         is_new_card = True
     else:
         is_new_card = False
@@ -92,6 +98,7 @@ def log_review(
 
     # Log event
     persistence.log_review_event(
+        word_id=word_id,
         lemma=lemma,
         pos=pos,
         exercise_type=exercise_type,
@@ -105,7 +112,9 @@ def log_review(
         stability_after=card.stability,
         difficulty_after=card.difficulty,
         d_eff_after=card.d_eff,
-        is_ltm_event=is_ltm
+        is_ltm_event=is_ltm,
+        session_id=session_id,
+        session_position=session_position
     )
 
 
@@ -201,22 +210,20 @@ def _apply_stm_update(
 # ---- Convenience functions for scheduler ----
 
 def get_card_state(
-    lemma: str,
-    pos: str,
+    word_id: str,
     exercise_type: str
 ) -> Optional[memory_state.CardState]:
     """
     Get current card state.
 
     Args:
-        lemma: Word lemma
-        pos: Part of speech
+        word_id: Unique word identifier
         exercise_type: Type of exercise
 
     Returns:
         CardState if card has been reviewed, None otherwise
     """
-    return persistence.load_card_state(lemma, pos, exercise_type)
+    return persistence.load_card_state(word_id, exercise_type)
 
 
 def get_due_cards(exercise_type: str) -> list[dict]:

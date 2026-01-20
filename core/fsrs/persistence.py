@@ -47,9 +47,12 @@ def init_db():
     # Create card_state table with new schema
     cursor.execute("""
         CREATE TABLE card_state (
+            word_id TEXT NOT NULL,
+            exercise_type TEXT NOT NULL,
+
+            -- Keep lemma/pos for readability and backward compat
             lemma TEXT NOT NULL,
             pos TEXT NOT NULL,
-            exercise_type TEXT NOT NULL,
 
             -- Long-term memory parameters
             stability REAL NOT NULL,
@@ -70,7 +73,7 @@ def init_db():
             -- Metadata
             d_floor REAL,  -- Floor difficulty from last LTM update
 
-            PRIMARY KEY (lemma, pos, exercise_type)
+            PRIMARY KEY (word_id, exercise_type)
         )
     """)
 
@@ -78,9 +81,13 @@ def init_db():
     cursor.execute("""
         CREATE TABLE review_events (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
+            word_id TEXT NOT NULL,
+            exercise_type TEXT NOT NULL,
+
+            -- Keep lemma/pos for readability and analytics
             lemma TEXT NOT NULL,
             pos TEXT NOT NULL,
-            exercise_type TEXT NOT NULL,
+
             timestamp TEXT NOT NULL,
             feedback_grade INTEGER NOT NULL,
             latency_ms INTEGER,
@@ -99,15 +106,24 @@ def init_db():
             -- Event type
             is_ltm_event INTEGER NOT NULL,  -- 1 for LTM, 0 for STM
 
-            FOREIGN KEY (lemma, pos, exercise_type)
-                REFERENCES card_state (lemma, pos, exercise_type)
+            -- Session context (optional, for analytics)
+            session_id TEXT,
+            session_position INTEGER,
+
+            FOREIGN KEY (word_id, exercise_type)
+                REFERENCES card_state (word_id, exercise_type)
         )
     """)
 
     # Indexes for performance
     cursor.execute("""
         CREATE INDEX idx_review_events_card
-        ON review_events (lemma, pos, exercise_type)
+        ON review_events (word_id, exercise_type)
+    """)
+
+    cursor.execute("""
+        CREATE INDEX idx_card_state_lemma_pos
+        ON card_state (lemma, pos)
     """)
 
     cursor.execute("""
@@ -120,16 +136,14 @@ def init_db():
 
 
 def load_card_state(
-    lemma: str,
-    pos: str,
+    word_id: str,
     exercise_type: str
 ) -> Optional[CardState]:
     """
     Load card state from database.
 
     Args:
-        lemma: Word lemma
-        pos: Part of speech
+        word_id: Unique word identifier
         exercise_type: Type of exercise
 
     Returns:
@@ -140,8 +154,8 @@ def load_card_state(
 
     cursor.execute("""
         SELECT * FROM card_state
-        WHERE lemma = ? AND pos = ? AND exercise_type = ?
-    """, (lemma, pos, exercise_type))
+        WHERE word_id = ? AND exercise_type = ?
+    """, (word_id, exercise_type))
 
     row = cursor.fetchone()
     conn.close()
@@ -158,9 +172,10 @@ def load_card_state(
     )
 
     return CardState(
+        word_id=row["word_id"],
+        exercise_type=row["exercise_type"],
         lemma=row["lemma"],
         pos=row["pos"],
-        exercise_type=row["exercise_type"],
         stability=row["stability"],
         difficulty=row["difficulty"],
         d_eff=row["d_eff"],
@@ -184,15 +199,17 @@ def save_card_state(card: CardState):
 
     cursor.execute("""
         INSERT OR REPLACE INTO card_state (
-            lemma, pos, exercise_type,
+            word_id, exercise_type,
+            lemma, pos,
             stability, difficulty, d_eff,
             review_count, last_review_timestamp, last_ltm_timestamp, ltm_review_date,
             stm_success_count_today
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     """, (
+        card.word_id,
+        card.exercise_type,
         card.lemma,
         card.pos,
-        card.exercise_type,
         card.stability,
         card.difficulty,
         card.d_eff,
@@ -208,6 +225,7 @@ def save_card_state(card: CardState):
 
 
 def log_review_event(
+    word_id: str,
     lemma: str,
     pos: str,
     exercise_type: str,
@@ -221,14 +239,17 @@ def log_review_event(
     stability_after: float,
     difficulty_after: float,
     d_eff_after: float,
-    is_ltm_event: bool
+    is_ltm_event: bool,
+    session_id: Optional[str] = None,
+    session_position: Optional[int] = None
 ):
     """
     Log a review event to the database.
 
     Args:
-        lemma: Word lemma
-        pos: Part of speech
+        word_id: Unique word identifier
+        lemma: Word lemma (for readability/analytics)
+        pos: Part of speech (for readability/analytics)
         exercise_type: Type of exercise
         timestamp: Review timestamp
         feedback_grade: User feedback
@@ -241,19 +262,22 @@ def log_review_event(
         difficulty_after: Difficulty after update
         d_eff_after: D_eff after update
         is_ltm_event: True for LTM event, False for STM
+        session_id: Optional session identifier (for analytics)
+        session_position: Optional position in session (0-indexed, for analytics)
     """
     conn = get_connection()
     cursor = conn.cursor()
 
     cursor.execute("""
         INSERT INTO review_events (
-            lemma, pos, exercise_type, timestamp, feedback_grade, latency_ms,
+            word_id, exercise_type, lemma, pos,
+            timestamp, feedback_grade, latency_ms,
             stability_before, difficulty_before, d_eff_before, retrievability_before,
             stability_after, difficulty_after, d_eff_after,
-            is_ltm_event
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            is_ltm_event, session_id, session_position
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     """, (
-        lemma, pos, exercise_type,
+        word_id, exercise_type, lemma, pos,
         timestamp.isoformat(),
         int(feedback_grade),
         latency_ms,
@@ -264,7 +288,9 @@ def log_review_event(
         stability_after,
         difficulty_after,
         d_eff_after,
-        1 if is_ltm_event else 0
+        1 if is_ltm_event else 0,
+        session_id,
+        session_position
     ))
 
     conn.commit()
@@ -307,6 +333,7 @@ def get_all_cards_with_state(exercise_type: str) -> list[dict]:
         retrievability = calculate_retrievability(row["stability"], days_since)
 
         result.append({
+            "word_id": row["word_id"],
             "lemma": row["lemma"],
             "pos": row["pos"],
             "exercise_type": row["exercise_type"],

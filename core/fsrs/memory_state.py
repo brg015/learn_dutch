@@ -21,11 +21,14 @@ class CardState:
     """
     Memory state for a single card.
 
-    A card is defined as: (lemma, pos, exercise_type)
+    A card is uniquely identified by: (word_id, exercise_type)
     """
+    word_id: str  # Unique identifier from MongoDB
+    exercise_type: str
+
+    # Keep lemma/pos for readability
     lemma: str
     pos: str
-    exercise_type: str
 
     # Long-term memory parameters (persistent)
     stability: float  # S, in days
@@ -133,6 +136,7 @@ def is_ltm_event(
 
 
 def initialize_new_card(
+    word_id: str,
     lemma: str,
     pos: str,
     exercise_type: str,
@@ -143,8 +147,9 @@ def initialize_new_card(
     Initialize state for a new card (never seen before).
 
     Args:
-        lemma: Word lemma
-        pos: Part of speech
+        word_id: Unique word identifier from MongoDB
+        lemma: Word lemma (for readability)
+        pos: Part of speech (for readability)
         exercise_type: Type of exercise
         initial_stability: Starting stability (default: 0.5 days)
         initial_difficulty: Starting difficulty (default: 5.0, middle of 1-10 scale)
@@ -155,9 +160,10 @@ def initialize_new_card(
     now = datetime.now(timezone.utc)
 
     return CardState(
+        word_id=word_id,
+        exercise_type=exercise_type,
         lemma=lemma,
         pos=pos,
-        exercise_type=exercise_type,
         stability=initial_stability,
         difficulty=initial_difficulty,
         d_eff=initial_difficulty,

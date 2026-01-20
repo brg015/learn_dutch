@@ -7,6 +7,7 @@ Provides functions to query and retrieve words from the lexicon.
 from __future__ import annotations
 
 import os
+import uuid
 from typing import Optional
 
 from dotenv import load_dotenv
@@ -95,9 +96,12 @@ def get_all_words(
     return list(collection.find(query))
 
 
-def get_word(lemma: str, pos: str) -> Optional[dict]:
+def get_word_by_lemma_pos(lemma: str, pos: str) -> Optional[dict]:
     """
     Get a specific word by lemma and part of speech.
+
+    Note: This returns the first match. For homonyms with different senses,
+    use get_word_by_id() or specify the sense.
 
     Args:
         lemma: The word lemma
@@ -112,6 +116,10 @@ def get_word(lemma: str, pos: str) -> Optional[dict]:
         "lemma": lemma,
         "pos": pos
     })
+
+
+# Backward compatibility alias
+get_word = get_word_by_lemma_pos
 
 
 def get_random_word(
@@ -259,3 +267,27 @@ def word_exists(lemma: str, pos: str) -> bool:
         True if the word exists, False otherwise
     """
     return get_word(lemma, pos) is not None
+
+
+def generate_word_id() -> str:
+    """
+    Generate a unique word ID (UUID).
+
+    Returns:
+        UUID string
+    """
+    return str(uuid.uuid4())
+
+
+def get_word_by_id(word_id: str) -> Optional[dict]:
+    """
+    Get a word by its unique word_id.
+
+    Args:
+        word_id: The unique word identifier
+
+    Returns:
+        Lexicon entry dictionary, or None if not found
+    """
+    collection = get_collection()
+    return collection.find_one({"word_id": word_id})

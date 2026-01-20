@@ -122,7 +122,12 @@ def _create_first_session(exercise_type: str, tag: Optional[str]) -> list[dict]:
     # Convert LTM cards to word dicts
     ltm_words = []
     for card in ltm_batch:
-        word = lexicon_repo.get_word_by_lemma_pos(card["lemma"], card["pos"])
+        # Use word_id if available, otherwise fall back to lemma/pos
+        if "word_id" in card:
+            word = lexicon_repo.get_word_by_id(card["word_id"])
+        else:
+            word = lexicon_repo.get_word_by_lemma_pos(card["lemma"], card["pos"])
+
         if word:
             ltm_words.append(word)
 
@@ -156,7 +161,12 @@ def _create_subsequent_session(exercise_type: str, tag: Optional[str]) -> list[d
     ltm_count = min(len(due_cards), SESSION_SIZE)
 
     for card in due_cards[:ltm_count]:
-        word = lexicon_repo.get_word_by_lemma_pos(card["lemma"], card["pos"])
+        # Use word_id if available, otherwise fall back to lemma/pos
+        if "word_id" in card:
+            word = lexicon_repo.get_word_by_id(card["word_id"])
+        else:
+            word = lexicon_repo.get_word_by_lemma_pos(card["lemma"], card["pos"])
+
         if word:
             session.append(word)
 
@@ -166,6 +176,7 @@ def _create_subsequent_session(exercise_type: str, tag: Optional[str]) -> list[d
         stm_count = min(len(stm_pool), SESSION_SIZE - len(session))
 
         for card_info in stm_pool[:stm_count]:
+            # STM pool only has lemma/pos, look up by those
             word = lexicon_repo.get_word_by_lemma_pos(card_info["lemma"], card_info["pos"])
             if word:
                 session.append(word)

@@ -5,7 +5,13 @@
       "Bash(py -c \"from core import fsrs; fsrs.init_db\\(\\); print\\(''Database initialized successfully with new FSRS schema''\\)\")",
       "Bash(py -c:*)",
       "Bash(py test_fsrs_refactor.py)",
-      "Bash(ls:*)"
+      "Bash(ls:*)",
+      "Bash(git mv:*)",
+      "Bash(tree:*)",
+      "Bash(py -m py_compile:*)",
+      "Bash(git add:*)",
+      "Bash(py -m scripts.data.migrate_add_word_ids:*)",
+      "Bash(.venv/Scripts/python:*)"
     ]
   }
 }

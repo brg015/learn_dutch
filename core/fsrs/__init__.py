@@ -28,7 +28,7 @@ Quick start:
 """
 
 # Main scheduling API
-from core.fsrs.scheduling import (
+from core.fsrs.review_logger import (
     log_review,
     get_card_state,
     get_due_cards,
