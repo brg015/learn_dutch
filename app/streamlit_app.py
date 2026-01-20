@@ -7,11 +7,10 @@ Simple review session interface for learning Dutch vocabulary.
 import streamlit as st
 from datetime import datetime, timezone
 
-from core import scheduler, log_repo, lexicon_repo
-from core.log_repo import FeedbackGrade
+from core import scheduler, fsrs, lexicon_repo
 
 # Initialize database
-log_repo.init_db()
+fsrs.init_db()
 
 # Cache database counts to avoid repeated MongoDB queries
 @st.cache_data(ttl=60)  # Cache for 60 seconds
@@ -53,17 +52,10 @@ def start_new_session():
     if tag_filter == "All":
         tag_filter = None
 
-    # Check if we should use enriched_only based on what's available
-    counts = get_word_counts()
-    use_enriched = counts["enriched"] > 0
-
-    # Pre-compute session batch
-    batch = scheduler.start_session(
-        size=20,
+    # Create session using new three-pool scheduler
+    batch = scheduler.create_session(
         exercise_type='word_translation',
-        enriched_only=use_enriched,
-        tag=tag_filter,
-        max_new_cards=5  # 5 new cards per session
+        tag=tag_filter
     )
 
     st.session_state.session_batch = batch
@@ -83,15 +75,15 @@ def load_next_word():
         st.session_state.current_word = None
         return
 
-    lemma, pos = st.session_state.session_batch[st.session_state.session_position]
-    word = lexicon_repo.get_word(lemma, pos)
+    # New scheduler returns word dicts directly, not tuples
+    word = st.session_state.session_batch[st.session_state.session_position]
 
     st.session_state.current_word = word
     st.session_state.show_answer = False
     st.session_state.start_time = datetime.now(timezone.utc)
 
 
-def log_and_next(feedback_grade: FeedbackGrade):
+def log_and_next(feedback_grade: fsrs.FeedbackGrade):
     """Log the current review result and move to next word in session."""
     if st.session_state.current_word:
         word = st.session_state.current_word
@@ -103,7 +95,7 @@ def log_and_next(feedback_grade: FeedbackGrade):
             latency_ms = int(elapsed.total_seconds() * 1000)
 
         # Log the review
-        log_repo.log_review(
+        fsrs.log_review(
             lemma=word["lemma"],
             pos=word["pos"],
             exercise_type="word_translation",  # MVP: only Dutch→English
@@ -113,7 +105,7 @@ def log_and_next(feedback_grade: FeedbackGrade):
 
         # Update session stats (count anything other than AGAIN as correct)
         st.session_state.session_count += 1
-        if feedback_grade != FeedbackGrade.AGAIN:
+        if feedback_grade != fsrs.FeedbackGrade.AGAIN:
             st.session_state.session_correct += 1
 
         # Move to next word in batch
@@ -272,22 +264,22 @@ else:
 
         with col1:
             if st.button("❌ Again", use_container_width=True, help="Completely forgot"):
-                log_and_next(FeedbackGrade.AGAIN)
+                log_and_next(fsrs.FeedbackGrade.AGAIN)
                 st.rerun()
 
         with col2:
             if st.button("😰 Hard", use_container_width=True, help="Remembered with difficulty"):
-                log_and_next(FeedbackGrade.HARD)
+                log_and_next(fsrs.FeedbackGrade.HARD)
                 st.rerun()
 
         with col3:
-            if st.button("👍 Medium", use_container_width=True, type="primary", help="Remembered normally"):
-                log_and_next(FeedbackGrade.MEDIUM)
+            if st.button("👍 Medium", use_container_width=True, help="Remembered normally"):
+                log_and_next(fsrs.FeedbackGrade.MEDIUM)
                 st.rerun()
 
         with col4:
             if st.button("✨ Easy", use_container_width=True, help="Remembered easily"):
-                log_and_next(FeedbackGrade.EASY)
+                log_and_next(fsrs.FeedbackGrade.EASY)
                 st.rerun()
 
         # Tell me more section

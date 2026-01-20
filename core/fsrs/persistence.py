@@ -1,0 +1,370 @@
+"""
+Persistence Layer - Database I/O for FSRS
+
+Handles all database operations for card state and review events.
+
+Schema:
+- card_state: Persistent memory state for each card
+- review_events: Log of all review attempts
+"""
+
+from __future__ import annotations
+import sqlite3
+from datetime import datetime, timezone
+from typing import Optional
+from pathlib import Path
+
+from core.fsrs.memory_state import CardState
+from core.fsrs.constants import FeedbackGrade
+
+
+# Database path
+DB_DIR = Path(__file__).parent.parent.parent / "logs"
+DB_PATH = DB_DIR / "learning.db"
+
+
+def get_connection() -> sqlite3.Connection:
+    """Get database connection with row factory."""
+    DB_DIR.mkdir(exist_ok=True)
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    return conn
+
+
+def init_db():
+    """
+    Initialize database schema with new FSRS design.
+
+    This DELETES existing data and creates fresh tables.
+    """
+    conn = get_connection()
+    cursor = conn.cursor()
+
+    # Drop old tables
+    cursor.execute("DROP TABLE IF EXISTS review_events")
+    cursor.execute("DROP TABLE IF EXISTS card_state")
+
+    # Create card_state table with new schema
+    cursor.execute("""
+        CREATE TABLE card_state (
+            lemma TEXT NOT NULL,
+            pos TEXT NOT NULL,
+            exercise_type TEXT NOT NULL,
+
+            -- Long-term memory parameters
+            stability REAL NOT NULL,
+            difficulty REAL NOT NULL,
+
+            -- Effective difficulty (for next LTM update)
+            d_eff REAL NOT NULL,
+
+            -- Review tracking
+            review_count INTEGER NOT NULL,
+            last_review_timestamp TEXT NOT NULL,
+            last_ltm_timestamp TEXT,
+            ltm_review_date TEXT,
+
+            -- Short-term memory tracking (reset after LTM)
+            stm_success_count_today INTEGER NOT NULL DEFAULT 0,
+
+            -- Metadata
+            d_floor REAL,  -- Floor difficulty from last LTM update
+
+            PRIMARY KEY (lemma, pos, exercise_type)
+        )
+    """)
+
+    # Create review_events table
+    cursor.execute("""
+        CREATE TABLE review_events (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            lemma TEXT NOT NULL,
+            pos TEXT NOT NULL,
+            exercise_type TEXT NOT NULL,
+            timestamp TEXT NOT NULL,
+            feedback_grade INTEGER NOT NULL,
+            latency_ms INTEGER,
+
+            -- State before review
+            stability_before REAL,
+            difficulty_before REAL,
+            d_eff_before REAL,
+            retrievability_before REAL,
+
+            -- State after review
+            stability_after REAL NOT NULL,
+            difficulty_after REAL NOT NULL,
+            d_eff_after REAL NOT NULL,
+
+            -- Event type
+            is_ltm_event INTEGER NOT NULL,  -- 1 for LTM, 0 for STM
+
+            FOREIGN KEY (lemma, pos, exercise_type)
+                REFERENCES card_state (lemma, pos, exercise_type)
+        )
+    """)
+
+    # Indexes for performance
+    cursor.execute("""
+        CREATE INDEX idx_review_events_card
+        ON review_events (lemma, pos, exercise_type)
+    """)
+
+    cursor.execute("""
+        CREATE INDEX idx_review_events_timestamp
+        ON review_events (timestamp)
+    """)
+
+    conn.commit()
+    conn.close()
+
+
+def load_card_state(
+    lemma: str,
+    pos: str,
+    exercise_type: str
+) -> Optional[CardState]:
+    """
+    Load card state from database.
+
+    Args:
+        lemma: Word lemma
+        pos: Part of speech
+        exercise_type: Type of exercise
+
+    Returns:
+        CardState if found, None if new card
+    """
+    conn = get_connection()
+    cursor = conn.cursor()
+
+    cursor.execute("""
+        SELECT * FROM card_state
+        WHERE lemma = ? AND pos = ? AND exercise_type = ?
+    """, (lemma, pos, exercise_type))
+
+    row = cursor.fetchone()
+    conn.close()
+
+    if row is None:
+        return None
+
+    # Parse timestamps
+    last_review_ts = datetime.fromisoformat(row["last_review_timestamp"])
+    last_ltm_ts = (
+        datetime.fromisoformat(row["last_ltm_timestamp"])
+        if row["last_ltm_timestamp"]
+        else None
+    )
+
+    return CardState(
+        lemma=row["lemma"],
+        pos=row["pos"],
+        exercise_type=row["exercise_type"],
+        stability=row["stability"],
+        difficulty=row["difficulty"],
+        d_eff=row["d_eff"],
+        review_count=row["review_count"],
+        last_review_timestamp=last_review_ts,
+        last_ltm_timestamp=last_ltm_ts,
+        ltm_review_date=row["ltm_review_date"],
+        stm_success_count_today=row["stm_success_count_today"]
+    )
+
+
+def save_card_state(card: CardState):
+    """
+    Save card state to database (insert or update).
+
+    Args:
+        card: CardState to save
+    """
+    conn = get_connection()
+    cursor = conn.cursor()
+
+    cursor.execute("""
+        INSERT OR REPLACE INTO card_state (
+            lemma, pos, exercise_type,
+            stability, difficulty, d_eff,
+            review_count, last_review_timestamp, last_ltm_timestamp, ltm_review_date,
+            stm_success_count_today
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    """, (
+        card.lemma,
+        card.pos,
+        card.exercise_type,
+        card.stability,
+        card.difficulty,
+        card.d_eff,
+        card.review_count,
+        card.last_review_timestamp.isoformat(),
+        card.last_ltm_timestamp.isoformat() if card.last_ltm_timestamp else None,
+        card.ltm_review_date,
+        card.stm_success_count_today
+    ))
+
+    conn.commit()
+    conn.close()
+
+
+def log_review_event(
+    lemma: str,
+    pos: str,
+    exercise_type: str,
+    timestamp: datetime,
+    feedback_grade: FeedbackGrade,
+    latency_ms: Optional[int],
+    stability_before: Optional[float],
+    difficulty_before: Optional[float],
+    d_eff_before: Optional[float],
+    retrievability_before: Optional[float],
+    stability_after: float,
+    difficulty_after: float,
+    d_eff_after: float,
+    is_ltm_event: bool
+):
+    """
+    Log a review event to the database.
+
+    Args:
+        lemma: Word lemma
+        pos: Part of speech
+        exercise_type: Type of exercise
+        timestamp: Review timestamp
+        feedback_grade: User feedback
+        latency_ms: Response time in milliseconds
+        stability_before: Stability before update (None for new cards)
+        difficulty_before: Difficulty before update (None for new cards)
+        d_eff_before: D_eff before update (None for new cards)
+        retrievability_before: R before update (None for new cards)
+        stability_after: Stability after update
+        difficulty_after: Difficulty after update
+        d_eff_after: D_eff after update
+        is_ltm_event: True for LTM event, False for STM
+    """
+    conn = get_connection()
+    cursor = conn.cursor()
+
+    cursor.execute("""
+        INSERT INTO review_events (
+            lemma, pos, exercise_type, timestamp, feedback_grade, latency_ms,
+            stability_before, difficulty_before, d_eff_before, retrievability_before,
+            stability_after, difficulty_after, d_eff_after,
+            is_ltm_event
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    """, (
+        lemma, pos, exercise_type,
+        timestamp.isoformat(),
+        int(feedback_grade),
+        latency_ms,
+        stability_before,
+        difficulty_before,
+        d_eff_before,
+        retrievability_before,
+        stability_after,
+        difficulty_after,
+        d_eff_after,
+        1 if is_ltm_event else 0
+    ))
+
+    conn.commit()
+    conn.close()
+
+
+def get_all_cards_with_state(exercise_type: str) -> list[dict]:
+    """
+    Get all cards with their current state and retrievability.
+
+    Args:
+        exercise_type: Type of exercise to filter by
+
+    Returns:
+        List of dicts with card info and computed retrievability
+    """
+    from core.fsrs.memory_state import calculate_retrievability, get_days_since_ltm_review
+
+    conn = get_connection()
+    cursor = conn.cursor()
+
+    cursor.execute("""
+        SELECT * FROM card_state
+        WHERE exercise_type = ?
+        ORDER BY last_review_timestamp DESC
+    """, (exercise_type,))
+
+    rows = cursor.fetchall()
+    conn.close()
+
+    result = []
+    for row in rows:
+        last_ltm_ts = (
+            datetime.fromisoformat(row["last_ltm_timestamp"])
+            if row["last_ltm_timestamp"]
+            else None
+        )
+
+        days_since = get_days_since_ltm_review(last_ltm_ts)
+        retrievability = calculate_retrievability(row["stability"], days_since)
+
+        result.append({
+            "lemma": row["lemma"],
+            "pos": row["pos"],
+            "exercise_type": row["exercise_type"],
+            "stability": row["stability"],
+            "difficulty": row["difficulty"],
+            "d_eff": row["d_eff"],
+            "retrievability": retrievability,
+            "review_count": row["review_count"],
+            "last_review_timestamp": row["last_review_timestamp"],
+            "last_ltm_timestamp": row["last_ltm_timestamp"],
+            "stm_success_count_today": row["stm_success_count_today"]
+        })
+
+    return result
+
+
+def get_due_cards(exercise_type: str, r_threshold: float = 0.70) -> list[dict]:
+    """
+    Get cards with retrievability below threshold (due for review).
+
+    Args:
+        exercise_type: Type of exercise to filter by
+        r_threshold: Retrievability threshold (default: 0.70)
+
+    Returns:
+        List of due cards, sorted by retrievability (most urgent first)
+    """
+    all_cards = get_all_cards_with_state(exercise_type)
+
+    # Filter by threshold
+    due_cards = [c for c in all_cards if c["retrievability"] < r_threshold]
+
+    # Sort by retrievability (lowest first = most urgent)
+    due_cards.sort(key=lambda c: c["retrievability"])
+
+    return due_cards
+
+
+def get_recent_events(limit: int = 10) -> list[dict]:
+    """
+    Get recent review events.
+
+    Args:
+        limit: Maximum number of events to return
+
+    Returns:
+        List of recent events (newest first)
+    """
+    conn = get_connection()
+    cursor = conn.cursor()
+
+    cursor.execute("""
+        SELECT * FROM review_events
+        ORDER BY timestamp DESC
+        LIMIT ?
+    """, (limit,))
+
+    rows = cursor.fetchall()
+    conn.close()
+
+    return [dict(row) for row in rows]

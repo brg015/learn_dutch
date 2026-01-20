@@ -1,277 +1,311 @@
 """
-Word scheduler for selecting words to review.
+Scheduler - Three-Pool Session Creation
 
-Uses FSRS (Free Spaced Repetition Scheduler) algorithm to prioritize words
-based on forgetting curves and retrievability.
+Creates study sessions from three distinct pools:
+1. LTM pool: Cards with R < 0.70 (due for review)
+2. STM pool: Cards marked AGAIN in last 0-1 calendar days
+3. New pool: Cards never seen before
 
-Sessions are pre-computed batches of words to review, mixing:
-- Due cards (retrievability < 70%)
-- New cards (never seen before)
-- Practice cards (retrievability > 70%, for extra practice)
+Session Logic:
+- First session of day: LTM_FRACTION from LTM pool + NEW_FRACTION from new pool
+  - If LTM insufficient, fill remainder with new cards
+  - If no LTM history exists, b=1.0 (all new)
+- Subsequent sessions: Priority order LTM > STM > New, all shuffled
 """
 
 from __future__ import annotations
-
-from typing import Optional
 import random
+from datetime import datetime, timezone, timedelta
+from typing import Optional
 
-from core import lexicon_repo, log_repo
+from core import fsrs, lexicon_repo
+from core.fsrs.constants import FeedbackGrade, R_TARGET
+
+# ---- Session Configuration ----
+SESSION_SIZE = 20           # Words per session
+LTM_FRACTION = 0.75         # Fraction of first session from LTM pool (0-1)
+NEW_FRACTION = 0.25         # Fraction of first session from new cards (0-1)
+STM_MAX_AGE_DAYS = 1        # Max age for STM pool (0-1 days: today or yesterday)
+
+assert abs(LTM_FRACTION + NEW_FRACTION - 1.0) < 0.001, "LTM_FRACTION + NEW_FRACTION must equal 1.0"
 
 
-def select_next_word(
-    enriched_only: bool = True,
-    tag: Optional[str] = None,
-    exclude_recent: bool = False,
-    exercise_type: str = 'word_translation',
-    max_new_cards: int = 10
-) -> Optional[dict]:
+def create_session(
+    exercise_type: str = "word_translation",
+    tag: Optional[str] = None
+) -> list[dict]:
     """
-    Select the next word to review using FSRS scheduling.
-
-    Priority order:
-    1. Due cards (retrievability < 70%) - sorted by most urgent
-    2. New cards (never seen before) - up to max_new_cards limit
-    3. If no due or new cards, return None (study session complete)
+    Create a study session using three-pool logic.
 
     Args:
-        enriched_only: If True, only select from enriched words
-        tag: Optional tag filter (user_tags or AI tags)
-        exclude_recent: If True, exclude the most recently reviewed word
-        exercise_type: Type of exercise (default: 'word_translation')
-        max_new_cards: Maximum number of new cards to introduce per session
+        exercise_type: Type of exercise (default: "word_translation")
+        tag: Optional tag filter for new cards
 
     Returns:
-        Lexicon entry dictionary, or None if no words available
+        List of word dictionaries for the session (shuffled)
     """
-    exclude_lemmas = None
-
-    if exclude_recent:
-        # Get the most recent review event
-        recent_events = log_repo.get_recent_events(limit=1)
-        if recent_events:
-            last_event = recent_events[0]
-            exclude_lemmas = {(last_event["lemma"], last_event["pos"])}
-
-    # 1. Check for due cards (retrievability below threshold)
-    due_cards = log_repo.get_due_cards(exercise_type=exercise_type)
-
-    if due_cards:
-        # Filter by tag if specified
-        if tag:
-            due_cards = [
-                card for card in due_cards
-                if _word_matches_tag(card['lemma'], card['pos'], tag)
-            ]
-
-        # Exclude recent if requested
-        if exclude_lemmas:
-            due_cards = [
-                card for card in due_cards
-                if (card['lemma'], card['pos']) not in exclude_lemmas
-            ]
-
-        if due_cards:
-            # Return most urgent (lowest retrievability)
-            card = due_cards[0]
-            return lexicon_repo.get_word(card['lemma'], card['pos'])
-
-    # 2. Check for new cards (never reviewed for this exercise type)
-    reviewed_set = _get_reviewed_cards_for_exercise(exercise_type)
-    new_cards_seen_this_session = _count_new_cards_this_session(exercise_type)
-
-    # Only introduce new cards if under the limit
-    if new_cards_seen_this_session < max_new_cards:
-        new_word = lexicon_repo.get_random_word(
-            enriched_only=enriched_only,
-            tag=tag,
-            exclude_lemmas=reviewed_set | (exclude_lemmas or set())
-        )
-        if new_word:
-            return new_word
-
-    # 3. Fallback: If no due cards and hit new card limit,
-    #    but user wants to study anyway, pick a random reviewed card
-    #    This happens when all cards were just reviewed (R ≈ 100%)
-    if reviewed_set:
-        # Pick from cards we've seen before (for practice)
-        word = lexicon_repo.get_random_word(
-            enriched_only=enriched_only,
-            tag=tag,
-            exclude_lemmas=exclude_lemmas or set()
-        )
-        if word:
-            return word
-
-    # 4. Truly nothing available
-    return None
+    # Determine if this is the first session today
+    if _is_first_session_today():
+        return _create_first_session(exercise_type, tag)
+    else:
+        return _create_subsequent_session(exercise_type, tag)
 
 
-def _word_matches_tag(lemma: str, pos: str, tag: str) -> bool:
-    """Check if a word has a specific tag (helper)."""
-    word = lexicon_repo.get_word(lemma, pos)
-    if not word:
-        return False
-
-    user_tags = word.get('user_tags', [])
-    ai_tags = word.get('tags', [])
-    return tag in user_tags or tag in ai_tags
-
-
-def _get_reviewed_cards_for_exercise(exercise_type: str) -> set[tuple[str, str]]:
-    """Get all (lemma, pos) pairs reviewed for a specific exercise type."""
-    all_cards = log_repo.get_all_cards_with_state(exercise_type=exercise_type)
-    return {(card['lemma'], card['pos']) for card in all_cards}
-
-
-def _count_new_cards_this_session(exercise_type: str) -> int:
+def _is_first_session_today() -> bool:
     """
-    Count how many new cards (review_count == 1) were introduced recently.
+    Check if this is the first session of the day.
 
-    For simplicity, we count cards with review_count == 1 from today.
+    Logic: If any review event exists today, it's not the first session.
     """
-    from datetime import datetime, timezone, timedelta
+    from core.fsrs.persistence import get_connection
 
-    all_cards = log_repo.get_all_cards_with_state(exercise_type=exercise_type)
+    conn = get_connection()
+    cursor = conn.cursor()
+
     today_start = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
 
-    new_today = 0
-    for card in all_cards:
-        if card['review_count'] == 1:
-            # Check if first review was today
-            last_review = datetime.fromisoformat(card['last_review_timestamp'])
-            if last_review >= today_start:
-                new_today += 1
+    cursor.execute("""
+        SELECT COUNT(*) as count
+        FROM review_events
+        WHERE timestamp >= ?
+    """, (today_start.isoformat(),))
 
-    return new_today
+    row = cursor.fetchone()
+    conn.close()
+
+    return row["count"] == 0
 
 
-# ---- Session Batching ----
-
-def start_session(
-    size: int = 20,
-    exercise_type: str = 'word_translation',
-    enriched_only: bool = True,
-    tag: Optional[str] = None,
-    max_new_cards: int = 5
-) -> list[tuple[str, str]]:
+def _create_first_session(exercise_type: str, tag: Optional[str]) -> list[dict]:
     """
-    Pre-compute a batch of words to review this session.
+    Create first session of the day.
 
-    The batch intelligently mixes:
-    1. Due cards (retrievability < 70%) - most urgent first
-    2. New cards (never seen) - up to max_new_cards per session
-    3. Practice cards (R > 70%) - fill remainder, prioritize highest R
+    Logic:
+    1. Get due cards (R < 0.70) from LTM pool
+    2. If no LTM cards exist at all, use 100% new cards
+    3. Otherwise, draw LTM_FRACTION from due cards (or all available if fewer)
+    4. Fill remainder with new cards
+    5. Shuffle final batch
 
     Args:
-        size: Number of words in the session batch (default: 20)
-        exercise_type: Type of exercise (default: 'word_translation')
-        enriched_only: If True, only select from enriched words
-        tag: Optional tag filter
-        max_new_cards: Maximum new cards to introduce per session (default: 5)
+        exercise_type: Type of exercise
+        tag: Optional tag filter for new cards
 
     Returns:
-        List of (lemma, pos) tuples in optimal review order
+        Shuffled session batch
     """
-    batch = []
-    reviewed_set = _get_reviewed_cards_for_exercise(exercise_type)
+    # Check if any LTM history exists
+    all_cards = fsrs.get_all_cards_with_state(exercise_type)
+    has_ltm_history = len(all_cards) > 0
 
-    # 1. Add all due cards (up to session size)
-    due_cards = log_repo.get_due_cards(exercise_type=exercise_type)
+    if not has_ltm_history:
+        # No history: all new cards
+        new_cards = _sample_new_cards(SESSION_SIZE, exercise_type, tag)
+        random.shuffle(new_cards)
+        return new_cards
 
-    if tag:
-        due_cards = [
-            card for card in due_cards
-            if _word_matches_tag(card['lemma'], card['pos'], tag)
-        ]
+    # Get due cards (R < R_TARGET)
+    due_cards = fsrs.get_due_cards(exercise_type, r_threshold=R_TARGET)
 
-    for card in due_cards[:size]:
-        batch.append((card['lemma'], card['pos']))
+    # Calculate target counts
+    ltm_target = int(SESSION_SIZE * LTM_FRACTION)
+    new_target = int(SESSION_SIZE * NEW_FRACTION)
 
-    # 2. Add new cards (up to max_new_cards per session)
-    remaining_space = size - len(batch)
-    new_cards_budget = min(
-        max_new_cards,      # Per-session limit (not per-day)
-        remaining_space     # Don't exceed session size
-    )
+    # Draw from LTM (or all available if fewer)
+    ltm_count = min(ltm_target, len(due_cards))
+    ltm_batch = due_cards[:ltm_count]
 
-    if new_cards_budget > 0:
-        # Get new words not yet reviewed
-        attempts = 0
-        max_attempts = new_cards_budget * 3  # Try 3x to avoid infinite loop
+    # Fill remainder with new cards
+    new_count = SESSION_SIZE - ltm_count
+    new_batch = _sample_new_cards(new_count, exercise_type, tag)
 
-        while len(batch) < len(batch) + new_cards_budget and attempts < max_attempts:
-            new_word = lexicon_repo.get_random_word(
-                enriched_only=enriched_only,
-                tag=tag,
-                exclude_lemmas=reviewed_set | set(batch)
-            )
-            if new_word:
-                batch.append((new_word['lemma'], new_word['pos']))
-            else:
-                break  # No more new words available
-            attempts += 1
+    # Convert LTM cards to word dicts
+    ltm_words = []
+    for card in ltm_batch:
+        word = lexicon_repo.get_word_by_lemma_pos(card["lemma"], card["pos"])
+        if word:
+            ltm_words.append(word)
 
-    # 3. Fill remainder with practice cards (high retrievability)
-    remaining_space = size - len(batch)
+    # Combine and shuffle
+    session = ltm_words + new_batch
+    random.shuffle(session)
 
-    if remaining_space > 0:
-        # Get all cards with state, filter out what's already in batch
-        all_cards = log_repo.get_all_cards_with_state(exercise_type=exercise_type)
+    return session
 
-        if tag:
-            all_cards = [
-                card for card in all_cards
-                if _word_matches_tag(card['lemma'], card['pos'], tag)
-            ]
 
-        # Filter out cards already in batch
-        batch_set = set(batch)
-        available_practice = [
-            card for card in all_cards
-            if (card['lemma'], card['pos']) not in batch_set
-        ]
+def _create_subsequent_session(exercise_type: str, tag: Optional[str]) -> list[dict]:
+    """
+    Create subsequent session (not first of day).
 
-        # Sort by retrievability (highest first) for intelligent practice
-        available_practice.sort(key=lambda c: c['retrievability'], reverse=True)
+    Logic:
+    1. Priority order: LTM > STM > New
+    2. Draw from each pool until SESSION_SIZE is reached
+    3. Shuffle final batch
 
-        # Mix: 70% from top quartile (easy refreshers), 30% from rest (variety)
-        top_quartile_size = max(1, len(available_practice) // 4)
-        top_cards = available_practice[:top_quartile_size]
-        rest_cards = available_practice[top_quartile_size:]
+    Args:
+        exercise_type: Type of exercise
+        tag: Optional tag filter for new cards
 
-        practice_picks = []
-        top_count = int(remaining_space * 0.7)
-        rest_count = remaining_space - top_count
+    Returns:
+        Shuffled session batch
+    """
+    session = []
 
-        # Randomly sample from each group for variety
-        if top_cards:
-            practice_picks.extend(random.sample(top_cards, min(top_count, len(top_cards))))
+    # 1. Draw from LTM pool (R < R_TARGET)
+    due_cards = fsrs.get_due_cards(exercise_type, r_threshold=R_TARGET)
+    ltm_count = min(len(due_cards), SESSION_SIZE)
 
-        remaining_after_top = remaining_space - len(practice_picks)
-        if rest_cards and remaining_after_top > 0:
-            practice_picks.extend(random.sample(rest_cards, min(remaining_after_top, len(rest_cards))))
+    for card in due_cards[:ltm_count]:
+        word = lexicon_repo.get_word_by_lemma_pos(card["lemma"], card["pos"])
+        if word:
+            session.append(word)
 
-        for card in practice_picks:
-            batch.append((card['lemma'], card['pos']))
+    # 2. If not full, draw from STM pool (recent AGAIN)
+    if len(session) < SESSION_SIZE:
+        stm_pool = _get_stm_pool(exercise_type)
+        stm_count = min(len(stm_pool), SESSION_SIZE - len(session))
 
-    # If we still don't have enough, fill remainder with random words
-    # This handles:
-    # - First session (no reviewed cards): randomly pick new words to get started
-    # - Established learner: pick any remaining words for variety
-    if len(batch) < size:
-        attempts = 0
-        max_attempts = (size - len(batch)) * 3
-
-        while len(batch) < size and attempts < max_attempts:
-            word = lexicon_repo.get_random_word(
-                enriched_only=enriched_only,
-                tag=tag,
-                exclude_lemmas=set(batch)
-            )
+        for card_info in stm_pool[:stm_count]:
+            word = lexicon_repo.get_word_by_lemma_pos(card_info["lemma"], card_info["pos"])
             if word:
-                batch.append((word['lemma'], word['pos']))
-            else:
-                break  # Truly no more words available
-            attempts += 1
+                session.append(word)
 
-    return batch
+    # 3. If still not full, draw from new cards
+    if len(session) < SESSION_SIZE:
+        new_count = SESSION_SIZE - len(session)
+        new_batch = _sample_new_cards(new_count, exercise_type, tag)
+        session.extend(new_batch)
+
+    # Shuffle and return
+    random.shuffle(session)
+    return session
+
+
+def _get_stm_pool(exercise_type: str) -> list[dict]:
+    """
+    Get STM pool: cards marked AGAIN in last 0-1 calendar days.
+
+    Logic:
+    1. Query review_events for AGAIN feedback in today or yesterday
+    2. Exclude cards where last review was EASY (they exit STM pool)
+    3. Sort by most recent failure first (same-day failures prioritized)
+
+    Args:
+        exercise_type: Type of exercise
+
+    Returns:
+        List of card info dicts (lemma, pos, last_again_timestamp)
+    """
+    from core.fsrs.persistence import get_connection
+
+    conn = get_connection()
+    cursor = conn.cursor()
+
+    # Get start of today and yesterday (calendar days, not 48-hour window)
+    now = datetime.now(timezone.utc)
+    today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    yesterday_start = today_start - timedelta(days=1)
+
+    # Find cards marked AGAIN in today or yesterday
+    cursor.execute("""
+        SELECT
+            lemma,
+            pos,
+            MAX(timestamp) as last_again_timestamp
+        FROM review_events
+        WHERE exercise_type = ?
+          AND feedback_grade = ?
+          AND timestamp >= ?
+        GROUP BY lemma, pos
+    """, (exercise_type, int(FeedbackGrade.AGAIN), yesterday_start.isoformat()))
+
+    again_cards = cursor.fetchall()
+
+    # Filter out cards where last review (any feedback) was EASY
+    stm_pool = []
+    for card in again_cards:
+        lemma, pos = card["lemma"], card["pos"]
+
+        # Get last review event for this card
+        cursor.execute("""
+            SELECT feedback_grade
+            FROM review_events
+            WHERE lemma = ? AND pos = ? AND exercise_type = ?
+            ORDER BY timestamp DESC
+            LIMIT 1
+        """, (lemma, pos, exercise_type))
+
+        last_review = cursor.fetchone()
+
+        # If last review was EASY, card exits STM pool
+        if last_review and last_review["feedback_grade"] != int(FeedbackGrade.EASY):
+            stm_pool.append({
+                "lemma": lemma,
+                "pos": pos,
+                "last_again_timestamp": card["last_again_timestamp"]
+            })
+
+    conn.close()
+
+    # Sort by most recent failure (same-day failures first)
+    stm_pool.sort(key=lambda x: x["last_again_timestamp"], reverse=True)
+
+    return stm_pool
+
+
+def _sample_new_cards(
+    count: int,
+    exercise_type: str,
+    tag: Optional[str]
+) -> list[dict]:
+    """
+    Sample new cards (never reviewed before).
+
+    Args:
+        count: Number of cards to sample
+        exercise_type: Type of exercise
+        tag: Optional tag filter
+
+    Returns:
+        List of word dictionaries
+    """
+    if count <= 0:
+        return []
+
+    # Get all reviewed cards for this exercise type
+    reviewed_cards = fsrs.get_all_cards_with_state(exercise_type)
+    reviewed_set = {(card["lemma"], card["pos"]) for card in reviewed_cards}
+
+    # Get all words from lexicon
+    all_words = lexicon_repo.get_all_words()
+
+    # Filter to new cards (not reviewed)
+    new_words = [
+        word for word in all_words
+        if (word["lemma"], word["pos"]) not in reviewed_set
+    ]
+
+    # Apply tag filter if specified
+    if tag:
+        new_words = [word for word in new_words if _word_matches_tag(word, tag)]
+
+    # Sample without replacement
+    sample_size = min(count, len(new_words))
+    return random.sample(new_words, sample_size)
+
+
+def _word_matches_tag(word: dict, tag: str) -> bool:
+    """
+    Check if word matches tag filter.
+
+    Args:
+        word: Word dictionary
+        tag: Tag to match
+
+    Returns:
+        True if word has the tag, False otherwise
+    """
+    word_tags = word.get("tags", [])
+    if isinstance(word_tags, str):
+        word_tags = [word_tags]
+    return tag in word_tags

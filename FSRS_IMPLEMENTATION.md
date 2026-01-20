@@ -1,254 +1,326 @@
-# FSRS Implementation Guide
+# FSRS Implementation – Design Specification
 
-## Overview
+## Purpose
 
-Your Dutch vocabulary trainer now uses **FSRS (Free Spaced Repetition Scheduler)** to optimize learning through forgetting curves and retrievability-based scheduling.
+This document describes the **intended learning algorithm design** for the vocabulary trainer.
 
-## What Changed
+It is a **design-first specification**, not a description of the current code.
+The goal is to define principles, memory state, and update rules clearly before (or independent of) implementation.
 
-### 1. Graded Feedback System
+The system is based on **FSRS-style spaced repetition**, extended with a principled separation between:
 
-**Before:** Binary feedback (I knew this / I didn't know)
-**Now:** 4-level graded feedback:
-
-- ❌ **Again** (1) - Completely forgot
-- 😰 **Hard** (2) - Remembered with difficulty
-- 👍 **Medium** (3) - Remembered normally
-- ✨ **Easy** (4) - Remembered easily
-
-### 2. Smart Scheduling
-
-**Before:** Random word selection
-**Now:** FSRS-based priority:
-
-1. **Due cards first** - Words with retrievability < 70% (most urgent first)
-2. **New cards** - Up to 10 new words per day
-3. **Session complete** - When no due cards and new card limit reached
-
-### 3. Database Schema
-
-Two new components:
-
-#### `card_state` table (current FSRS state)
-```sql
-lemma, pos, exercise_type → Primary key (one card per exercise type)
-stability (S)              → Days until forgetting (higher = better learned)
-difficulty (D)             → 1-10 scale (higher = harder for you)
-last_review_timestamp      → When last reviewed
-review_count               → Total reviews
-```
-
-#### `review_events` table (updated)
-```sql
-feedback_grade  → 1-4 (AGAIN/HARD/MEDIUM/EASY) instead of boolean
-```
-
-## How FSRS Works
-
-### Memory State Per Card
-
-Each card tracks:
-- **Stability (S)** - How long before you forget (in days)
-- **Difficulty (D)** - How hard this specific card is for you (0-10)
-
-### Retrievability Calculation
-
-At any moment, your probability of recalling a card is:
-
-```
-R = 0.9^(days_since_review / stability)
-```
-
-Example with S = 10 days:
-- Day 0: R = 100% (just reviewed)
-- Day 7: R = 93% (still strong)
-- Day 14: R = 86% (starting to fade)
-- Day 30: R = 73% (**due for review at 70% threshold**)
-
-### State Updates After Review
-
-Feedback affects future scheduling:
-
-| Feedback | Stability Change | Difficulty Change | Meaning |
-|----------|-----------------|-------------------|---------|
-| **Again** | ×0.4 (drops) | +0.5 (harder) | You forgot - review sooner |
-| **Hard** | ×1.2 (small gain) | +0.2 (slightly harder) | Struggled - needs work |
-| **Medium** | ×2.5 (good gain) | -0.1 (slightly easier) | Normal recall |
-| **Easy** | ×4.0 (large gain) | -0.3 (easier) | Solid recall - longer gap |
-
-## Migration
-
-If you have an existing database:
-
-```bash
-python migrate_to_fsrs.py
-```
-
-This will:
-1. Backup your old `review_events` table
-2. Convert binary feedback to graded (remembered=1 → MEDIUM, remembered=0 → AGAIN)
-3. Create `card_state` table with initial values based on review history
-4. Add proper indexes
-
-## Configuration
-
-### New Card Limit
-
-Default: **10 new cards per day**
-
-To change, edit `select_next_word()` in [core/scheduler.py:25](core/scheduler.py#L25):
-
-```python
-def select_next_word(
-    ...
-    max_new_cards: int = 10  # Change this
-):
-```
-
-### Retrievability Threshold
-
-Default: **70%** (cards reviewed when R drops below 0.70)
-
-To change, edit `RETRIEVABILITY_THRESHOLD` in [core/log_repo.py:72](core/log_repo.py#L72):
-
-```python
-RETRIEVABILITY_THRESHOLD = 0.70  # Change this (0.0 to 1.0)
-```
-
-**Higher threshold (e.g., 0.80)** = Review cards more frequently (easier, safer)
-**Lower threshold (e.g., 0.60)** = Review cards less frequently (harder, more efficient)
-
-## FSRS Algorithm Parameters
-
-Current weights in [core/log_repo.py:75-86](core/log_repo.py#L75-L86):
-
-```python
-W = {
-    'stability_increase': {
-        FeedbackGrade.AGAIN: 0.4,   # Failed: reduce to 40%
-        FeedbackGrade.HARD: 1.2,    # Hard: +20%
-        FeedbackGrade.MEDIUM: 2.5,  # Medium: 2.5x
-        FeedbackGrade.EASY: 4.0,    # Easy: 4x
-    },
-    'difficulty_change': {
-        FeedbackGrade.AGAIN: 0.5,   # Failure: +0.5 difficulty
-        FeedbackGrade.HARD: 0.2,    # Hard: +0.2
-        FeedbackGrade.MEDIUM: -0.1, # Medium: -0.1
-        FeedbackGrade.EASY: -0.3,   # Easy: -0.3
-    }
-}
-```
-
-**Do NOT change these unless you understand FSRS optimization.**
-They're based on research and large-scale data fitting.
-
-## Testing Your Setup
-
-Run the test script to verify everything works:
-
-```bash
-python test_fsrs.py
-```
-
-This creates a temporary database and demonstrates:
-- Card state initialization
-- Stability/difficulty updates
-- Retrievability calculation over time
-- Due card scheduling
-
-## Analytics
-
-### View Card States
-
-```python
-from core import log_repo
-
-# Get all cards with current state
-cards = log_repo.get_all_cards_with_state('word_translation')
-
-for card in sorted(cards, key=lambda c: c['retrievability']):
-    print(f"{card['lemma']:15} "
-          f"R={card['retrievability']:.0%} "
-          f"S={card['stability']:.1f}d "
-          f"D={card['difficulty']:.1f}")
-```
-
-### View Due Cards
-
-```python
-from core import log_repo
-
-due = log_repo.get_due_cards('word_translation', threshold=0.70)
-print(f"{len(due)} cards due for review")
-
-for card in due[:10]:  # Top 10 most urgent
-    print(f"{card['lemma']} - {card['retrievability']:.0%}")
-```
-
-### Check Individual Card
-
-```python
-from core import log_repo
-
-state = log_repo.get_card_state('huis', 'noun', 'word_translation')
-print(f"Stability: {state['stability']:.2f} days")
-print(f"Difficulty: {state['difficulty']:.1f}")
-print(f"Retrievability: {state['retrievability']:.0%}")
-print(f"Reviews: {state['review_count']}")
-```
-
-## Future Enhancements
-
-Not yet implemented (from project_context.md):
-
-1. **Multiple Exercise Types**
-   - Current: Only `word_translation` (Dutch → English)
-   - Future: Articles, verb conjugations, prepositions, etc.
-   - Each exercise type gets independent card state
-
-2. **Parameter Optimization**
-   - Current: Fixed FSRS weights
-   - Future: Optimize weights based on your review history
-
-3. **Confidence Intervals**
-   - Show uncertainty bounds on retrievability predictions
-
-4. **Learning Curve Visualization**
-   - Plot stability/difficulty over time
-   - Identify problem words
-
-## Troubleshooting
-
-### "No cards due" immediately after starting
-
-This is normal! If you just reviewed words, they all have R ≈ 100%.
-Wait a day or increase `max_new_cards` to see new words.
-
-### All cards showing R = 100%
-
-You just reviewed them. Come back tomorrow to see retrievability decay.
-
-### Session ends too quickly
-
-Increase `max_new_cards` or lower `RETRIEVABILITY_THRESHOLD`.
-
-### Too many due cards overwhelming
-
-This happens if you skip several days. FSRS will catch up as you review.
-Consider temporarily increasing threshold to reduce backlog.
-
-## References
-
-- [FSRS Algorithm Paper](https://github.com/open-spaced-repetition/fsrs4anki/wiki/The-Algorithm)
-- [FSRS-4.5 Implementation](https://github.com/open-spaced-repetition/fsrs-optimizer)
-- Project context: [project_context.md](project_context.md)
+- **Long-Term Memory (LTM)** updates  
+- **Short-Term Memory (STM)** practice and fluency repair
 
 ---
 
-**Ready to start?**
+## Core Design Principles
 
-1. Migrate your database: `python migrate_to_fsrs.py`
-2. Test the system: `python test_fsrs.py`
-3. Run the app: `.\run_app.ps1`
+1. **Spaced retrieval drives long-term memory**
+   - The most important learning signal comes from retrieval after meaningful time gaps.
+   - The first spaced retrieval attempt of a day carries the most weight for long-term updates.
 
-Happy learning! 🇳🇱
+2. **Short-term practice supports fluency, not consolidation**
+   - Repeated same-day exposure improves access and fluency.
+   - It should not be credited as strongly as spaced retrieval.
+
+3. **The algorithm must not force study sessions**
+   - Users may continue studying beyond “due” items.
+   - Extra study should focus on weak or recently failed material without corrupting long-term scheduling.
+
+4. **Memory state should be interpretable**
+   - Model variables correspond to meaningful cognitive quantities (forgetting rate, learning efficiency).
+
+---
+
+## Unit of Scheduling
+
+The basic unit of learning is a **card**, defined as:
+
+(lemma × exercise type × prompt → answer)
+
+Examples:
+- (verrekijker, translation)
+- (verrekijker, article)
+- (lopen, perfectum)
+- (wachten, prepositions)
+
+Each card is tracked independently and has its own memory state.
+
+---
+
+## Memory State Variables
+
+Each card maintains the following **persistent state**.
+
+### Stability (S)
+- Units: days
+- Meaning: how slowly the memory decays
+- Larger S means slower forgetting
+
+### Difficulty (D)
+- Unitless, range 1–10
+- Meaning: how hard this card is for the learner
+- Higher D means slower learning
+
+These are **long-term parameters**, updated only by LTM events.
+
+---
+
+## Derived Quantity: Retrievability
+
+At any moment, the probability that the learner can recall a card is:
+
+R = exp( -Δt / S )
+
+Where:
+- Δt = time since last LTM review (in days)
+- S = stability
+
+Interpretation:
+- Immediately after review: R is close to 1
+- As time passes: R decays smoothly
+- A card is considered **due** when R drops below a target threshold (e.g. 0.70)
+
+---
+
+## Feedback Scale (User Input)
+
+User feedback is graded on four levels:
+
+| Label  | Meaning                          |
+|------|----------------------------------|
+| Again | Retrieval failed                 |
+| Hard  | Retrieved with high effort       |
+| Medium| Retrieved normally               |
+| Easy  | Retrieved fluently               |
+
+These labels are **signals**, not ground truth.
+
+---
+
+## Long-Term Memory (LTM) Updates
+
+### When LTM Updates Occur
+
+- Once per card per day
+- At the first meaningful retrieval attempt after a non-trivial delay
+- This update drives long-term scheduling
+
+---
+
+### LTM Stability Update
+
+For a successful retrieval (Hard / Medium / Easy):
+
+ΔS = k * S * base_gain(rating) * (1 - R) * f(D_used)  
+S_new = S + ΔS
+
+Where:
+- (1 - R) rewards risky (well-spaced) success
+- f(D) reduces learning gains for difficult items
+- f(D) = 1 / (1+ alpha*(D-1)) 
+- alpha controls how much difficulty reduces learning efficiency, with a large alpha leading to slower learning (ΔS)
+
+Key principle:
+Spaced, effortful success produces the largest stability gains.
+
+---
+
+### Stability Reduction on Failure (LTM only)
+
+For a failed retrieval (Again):
+
+S_new = max(S_min, S * (1 - k_fail * R))
+
+Failures are penalized more strongly when recall was expected (high R).
+
+---
+
+### LTM Difficulty Update
+
+Difficulty reflects **learning efficiency**, not forgetting speed.
+
+D_new = clip(
+    D + eta * surprise * u(rating),
+    min=1,
+    max=10
+)
+
+- Suprise = {
+    on failure: R
+    on succuss (hard, medium, or easy): (1-R)
+}
+- eta controls how quickly difficulty adapts, higher eta leads to faster changes
+
+Conceptually:
+- Failure increases difficulty
+- Easy success decreases difficulty
+- Changes are larger when the outcome was surprising given R
+
+Difficulty updates happen **only during LTM events**.
+
+---
+
+## Short-Term Memory (STM) Practice
+
+STM exists to:
+- Repair same-day failures
+- Improve access and fluency
+- Support later spaced learning
+
+STM **never updates stability (S)**.
+
+---
+
+## Effective Difficulty (D_eff)
+
+To allow STM to matter without corrupting long-term memory, we introduce:
+
+### D_eff – Effective Difficulty
+- Used only for learning efficiency
+- Initialized as:
+
+D_eff = D
+
+- Modified by STM success
+- Used at the next LTM update to scale stability gains
+
+D remains the true long-term difficulty.
+
+---
+
+## STM → Difficulty Update Rule
+
+### Counterfactual Difficulty Clamp
+
+After an LTM event, compute:
+
+D_floor = the difficulty the card would have had
+          if the learner had answered Hard (correct with effort)
+
+STM may move D_eff toward D_floor, but never below it.
+
+This encodes the rule:
+STM can repair fluency up to “Hard-correct,” but cannot certify mastery.
+
+---
+
+### STM Success Update
+
+On the m-th STM success of the day:
+
+D_eff = D_floor + (D_eff - D_floor) * (1 - lambda_m)
+
+With diminishing returns:
+
+lambda_m = 0.5 / (m + 1)
+
+Interpretation:
+- First STM success moves about 50% toward the floor
+- Subsequent successes produce smaller gains
+- STM repairs fluency without overstating long-term mastery
+
+STM failures:
+- Do not update D or D_eff
+- Are logged only
+
+---
+
+## Interaction Between STM and LTM
+
+- STM never updates S directly
+- STM improves learning efficiency
+- On the next LTM review:
+  - Stability updates use D_eff instead of D
+- After the LTM update:
+  - D_eff is reset to D
+
+This ensures STM helps without misleading the scheduler.
+
+---
+
+## Scheduling Pools (Conceptual)
+
+The system operates over three conceptual pools:
+
+1. LTM pool
+   - Cards with low retrievability (R < threshold)
+   - Ranked by urgency (lowest R first)
+
+2. STM pool
+   - Cards failed or marked Hard today
+   - Used for optional extra practice
+
+3. New cards
+   - No memory state yet
+   - Intake-limited per day
+
+Users may study indefinitely; the system adapts without forcing sessions.
+
+---
+
+## Default Parameters (Initial Guesses)
+
+These are **initial defaults**, not claims of optimality.
+
+### Global Constants
+
+| Parameter | Value |
+|---------|-------|
+| R_target | 0.70 |
+| S_min   | 0.5 days |
+| D range | 1–10 |
+| k       | 1.2 |
+| k_fail  | 0.6 |
+| alpha   | 0.15 |
+| eta     | 0.8 |
+
+---
+
+### Base Learning Gain by Rating
+
+| Rating | base_gain |
+|------|-----------|
+| Hard | 0.5 |
+| Medium | 1.0 |
+| Easy | 1.8 |
+
+---
+
+### Difficulty Update Direction by Rating
+
+| Rating | u(rating) |
+|------|------------|
+| Again | +1.0 |
+| Hard  | +0.35 |
+| Medium| -0.20 |
+| Easy  | -0.60 |
+
+Difficulty is clipped to the range [1, 10].
+
+---
+
+## Logging and Future Optimization
+
+All events should be logged:
+- LTM attempts
+- STM attempts (success/failure, response time)
+- State before and after LTM updates
+
+This enables:
+- Parameter optimization
+- Evaluation of STM effectiveness
+- Future RT-based or confidence-based modeling
+
+---
+
+## Status
+
+- This document defines the **target design**
+- Implementation may lag behind specification
+- STM/LTM separation is planned but not fully implemented
+
+---
+
+Code should be written to match the model — not the other way around.

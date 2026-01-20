@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python:*)",
+      "Bash(py -c \"from core import fsrs; fsrs.init_db\\(\\); print\\(''Database initialized successfully with new FSRS schema''\\)\")",
+      "Bash(py -c:*)",
+      "Bash(py test_fsrs_refactor.py)",
+      "Bash(ls:*)"
+    ]
+  }
+}
