@@ -10,6 +10,7 @@ from __future__ import annotations
 from datetime import datetime
 from enum import Enum
 from typing import Optional
+import uuid
 
 from pydantic import BaseModel, Field
 
@@ -150,9 +151,9 @@ class LexiconEntry(BaseModel):
 
     Each entry has a unique word_id to handle homonyms (e.g., 'bank' as financial institution vs couch).
     """
-    # Unique identifier (generated on import/creation)
-    word_id: Optional[str] = Field(
-        default=None,
+    # Unique identifier (auto-generated if not provided)
+    word_id: str = Field(
+        default_factory=lambda: str(uuid.uuid4()),
         description="Unique identifier for this word entry (UUID). Auto-generated if not provided."
     )
 

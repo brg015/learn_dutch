@@ -108,8 +108,9 @@ def import_words(
     client.admin.command("ping")
     print(f"✓ Connected to MongoDB: {DB_NAME}.{COLLECTION_NAME}\n")
 
-    # Create unique index on lemma + pos if it doesn't exist
-    collection.create_index([("lemma", 1), ("pos", 1)], unique=True)
+    # Create indexes (non-unique, to support homonyms)
+    collection.create_index([("lemma", 1), ("pos", 1)])  # Query optimization
+    collection.create_index([("word_id", 1)], unique=True)  # Ensure word_id uniqueness
 
     # Load CSV
     if not CSV_PATH.exists():
