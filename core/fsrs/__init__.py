@@ -37,7 +37,7 @@ from core.fsrs.review_logger import (
 )
 
 # Database initialization
-from core.fsrs.persistence import init_db
+from core.fsrs.persistence import init_db, reset_db
 
 # Constants and parameters
 from core.fsrs.constants import (
@@ -71,6 +71,7 @@ __all__ = [
     "get_all_cards_with_state",
     "get_recent_events",
     "init_db",
+    "reset_db",
 
     # Enums
     "FeedbackGrade",

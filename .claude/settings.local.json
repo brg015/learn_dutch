@@ -11,7 +11,8 @@
       "Bash(py -m py_compile:*)",
       "Bash(git add:*)",
       "Bash(py -m scripts.data.migrate_add_word_ids:*)",
-      "Bash(.venv/Scripts/python:*)"
+      "Bash(.venv/Scripts/python:*)",
+      "Bash(.venv/Scripts/pip install:*)"
     ]
   }
 }

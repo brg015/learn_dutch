@@ -4,3 +4,18 @@ __pycache__/
 .DS_Store
 .vscode/*
 logs/
+
+# Google Sheets OAuth
+token.json
+credentials.json
+
+# Databases
+learning.db
+*.sqlite
+
+# Notebook outputs
+.ipynb_checkpoints/
+learning_summary.txt
+
+# Data files (now using Google Sheets)
+data/

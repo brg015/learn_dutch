@@ -16,13 +16,13 @@ from __future__ import annotations
 
 import argparse
 import os
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
 
 from dotenv import load_dotenv
 from pymongo import MongoClient
 
-from scripts.enrich_lexicon import enrich_word
+from scripts.enrichment.enrich_lexicon import enrich_word
 
 # Load environment
 load_dotenv()
@@ -100,13 +100,19 @@ def enrich_and_update(
     skipped_count = 0
 
     for idx, doc in enumerate(words, 1):
-        # Get import data (fallback to lemma/translations if no import_data)
+        # Get import data (fallback to lemma/translation if no import_data)
         if doc.get("import_data"):
             dutch = doc["import_data"]["imported_word"]
             english = doc["import_data"]["imported_translation"]
         else:
             dutch = doc["lemma"]
-            english = doc["translations"][0] if doc.get("translations") else ""
+            # Handle both old (translations list) and new (translation string) schema
+            if doc.get("translation"):
+                english = doc["translation"]
+            elif doc.get("translations"):
+                english = doc["translations"][0]
+            else:
+                english = ""
 
         print(f"\n[{idx}/{len(words)}] Processing: {dutch} ({english})")
 
@@ -149,13 +155,32 @@ def enrich_and_update(
             if lemma_normalized:
                 print(f"  → Lemma normalized: '{dutch}' → '{enriched.lemma}'")
 
+            # Prepare general_examples: copy from present examples if available
+            general_examples = []
+
+            # Check if AI provided general_examples
+            if enriched.general_examples:
+                general_examples = enriched.general_examples
+            else:
+                # Auto-populate from POS-specific examples
+                # For verbs, copy from examples_present
+                if enriched.verb_meta and enriched.verb_meta.examples_present:
+                    general_examples = enriched.verb_meta.examples_present[:2]  # Take first 2
+                # For nouns, copy from examples_singular
+                elif enriched.noun_meta and enriched.noun_meta.examples_singular:
+                    general_examples = enriched.noun_meta.examples_singular[:2]
+                # For adjectives, copy from examples_base
+                elif enriched.adjective_meta and enriched.adjective_meta.examples_base:
+                    general_examples = enriched.adjective_meta.examples_base[:2]
+
             # Prepare update
             update_doc = {
                 "$set": {
                     # Update lexicon fields (may differ from import_data)
                     "lemma": enriched.lemma,
                     "pos": enriched.pos,
-                    "translations": enriched.translations,
+                    "translation": enriched.translation,
+                    "definition": enriched.definition,
                     "difficulty": enriched.difficulty,
                     "tags": enriched.tags,
 
@@ -163,11 +188,11 @@ def enrich_and_update(
                     "noun_meta": enriched.noun_meta.model_dump() if enriched.noun_meta else None,
                     "verb_meta": enriched.verb_meta.model_dump() if enriched.verb_meta else None,
                     "adjective_meta": enriched.adjective_meta.model_dump() if enriched.adjective_meta else None,
-                    "general_examples": [ex.model_dump() for ex in enriched.general_examples],
+                    "general_examples": [ex.model_dump() for ex in general_examples] if general_examples else [],
 
                     # Enrichment metadata
                     "enrichment.enriched": True,
-                    "enrichment.enriched_at": datetime.now(datetime.timezone.utc),
+                    "enrichment.enriched_at": datetime.now(timezone.utc),
                     "enrichment.model_used": model,
                     "enrichment.version": doc.get("enrichment", {}).get("version", 1),
                     "enrichment.lemma_normalized": lemma_normalized,

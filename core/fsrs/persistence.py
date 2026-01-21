@@ -31,11 +31,12 @@ def get_connection() -> sqlite3.Connection:
     return conn
 
 
-def init_db():
+def reset_db():
     """
-    Initialize database schema with new FSRS design.
+    DANGEROUS: Delete all data and recreate tables.
 
-    This DELETES existing data and creates fresh tables.
+    Only use this for testing or when you want to start fresh.
+    All review history will be lost!
     """
     conn = get_connection()
     cursor = conn.cursor()
@@ -44,9 +45,25 @@ def init_db():
     cursor.execute("DROP TABLE IF EXISTS review_events")
     cursor.execute("DROP TABLE IF EXISTS card_state")
 
-    # Create card_state table with new schema
+    conn.commit()
+    conn.close()
+
+    # Now create fresh tables
+    init_db()
+
+
+def init_db():
+    """
+    Initialize database schema if tables don't exist.
+
+    Safe to call multiple times - only creates tables if they don't exist.
+    """
+    conn = get_connection()
+    cursor = conn.cursor()
+
+    # Create card_state table with new schema (IF NOT EXISTS)
     cursor.execute("""
-        CREATE TABLE card_state (
+        CREATE TABLE IF NOT EXISTS card_state (
             word_id TEXT NOT NULL,
             exercise_type TEXT NOT NULL,
 
@@ -77,9 +94,9 @@ def init_db():
         )
     """)
 
-    # Create review_events table
+    # Create review_events table (IF NOT EXISTS)
     cursor.execute("""
-        CREATE TABLE review_events (
+        CREATE TABLE IF NOT EXISTS review_events (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             word_id TEXT NOT NULL,
             exercise_type TEXT NOT NULL,
@@ -115,19 +132,19 @@ def init_db():
         )
     """)
 
-    # Indexes for performance
+    # Indexes for performance (IF NOT EXISTS)
     cursor.execute("""
-        CREATE INDEX idx_review_events_card
+        CREATE INDEX IF NOT EXISTS idx_review_events_card
         ON review_events (word_id, exercise_type)
     """)
 
     cursor.execute("""
-        CREATE INDEX idx_card_state_lemma_pos
+        CREATE INDEX IF NOT EXISTS idx_card_state_lemma_pos
         ON card_state (lemma, pos)
     """)
 
     cursor.execute("""
-        CREATE INDEX idx_review_events_timestamp
+        CREATE INDEX IF NOT EXISTS idx_review_events_timestamp
         ON review_events (timestamp)
     """)
 

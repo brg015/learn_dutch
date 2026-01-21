@@ -230,8 +230,13 @@ else:
 
     else:
         # BACK OF CARD: English translation with Dutch in corner
-        translations = word.get("translations", [])
-        translation_text = ', '.join(translations) if translations else "No translation"
+        # Handle both new (translation string) and old (translations list) schema
+        if word.get("translation"):
+            translation_text = word["translation"]
+        elif word.get("translations"):
+            translation_text = ', '.join(word["translations"])
+        else:
+            translation_text = "No translation"
 
         st.markdown(
             f"""

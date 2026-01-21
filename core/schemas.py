@@ -7,7 +7,7 @@ AI-enrichment with structured outputs.
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timezone
 from enum import Enum
 from typing import Optional
 import uuid
@@ -73,6 +73,12 @@ class BilingualExample(BaseModel):
     english: str = Field(..., description="English translation")
 
 
+class PrepositionExamples(BaseModel):
+    """Examples for a specific preposition."""
+    preposition: str = Field(..., description="The preposition (e.g., 'met', 'over', 'aan')")
+    examples: list[BilingualExample] = Field(default_factory=list, max_length=2, description="2 example sentences using this preposition")
+
+
 # ---- POS-specific metadata ----
 
 class NounMetadata(BaseModel):
@@ -85,6 +91,9 @@ class NounMetadata(BaseModel):
     examples_singular: list[BilingualExample] = Field(default_factory=list, max_length=MAX_EXAMPLES_PER_FORM)
     examples_plural: list[BilingualExample] = Field(default_factory=list, max_length=MAX_EXAMPLES_PER_FORM)
 
+    class Config:
+        use_enum_values = True  # Store enum values as strings
+
 
 class VerbMetadata(BaseModel):
     """Metadata specific to verbs."""
@@ -94,6 +103,9 @@ class VerbMetadata(BaseModel):
     auxiliary: Optional[VerbAuxiliary] = None  # hebben or zijn
     separable: Optional[bool] = None
     separable_prefix: Optional[str] = None  # e.g., "op" in "opstaan"
+
+    # Reflexive verbs (e.g., "zich schamen", "zich vergissen")
+    is_reflexive: Optional[bool] = None  # True if verb requires "zich"
 
     # Irregularity flags (important for FSRS difficulty)
     is_irregular_past: Optional[bool] = None  # True if past tense is irregular
@@ -105,10 +117,20 @@ class VerbMetadata(BaseModel):
         description="All common prepositions used with this verb (e.g., 'aan', 'op', 'van')"
     )
 
-    # Examples for different tenses/forms
+    # Preposition-specific examples (organized by preposition)
+    # List of PrepositionExamples objects, one per preposition
+    preposition_examples: list[PrepositionExamples] = Field(
+        default_factory=list,
+        description="Examples grouped by preposition. Each preposition gets its own entry with 2 examples."
+    )
+
+    # Examples for different tenses/forms (for verbs without prepositions, or general tense examples)
     examples_present: list[BilingualExample] = Field(default_factory=list, max_length=MAX_EXAMPLES_PER_FORM)
     examples_past: list[BilingualExample] = Field(default_factory=list, max_length=MAX_EXAMPLES_PER_FORM)
     examples_perfect: list[BilingualExample] = Field(default_factory=list, max_length=MAX_EXAMPLES_PER_FORM)
+
+    class Config:
+        use_enum_values = True  # Store enum values as strings
 
 
 class AdjectiveMetadata(BaseModel):
@@ -121,6 +143,9 @@ class AdjectiveMetadata(BaseModel):
     examples_comparative: list[BilingualExample] = Field(default_factory=list, max_length=MAX_EXAMPLES_PER_FORM)
     examples_superlative: list[BilingualExample] = Field(default_factory=list, max_length=MAX_EXAMPLES_PER_FORM)
 
+    class Config:
+        use_enum_values = True  # Store enum values as strings
+
 
 # ---- Import Data ----
 
@@ -128,7 +153,7 @@ class ImportData(BaseModel):
     """Preserves the original import data from CSV."""
     imported_word: str = Field(..., description="The Dutch word as imported (may not be lemma)")
     imported_translation: str = Field(..., description="The English translation as imported")
-    imported_at: datetime = Field(default_factory=lambda: datetime.now(datetime.timezone.utc), description="When this was imported")
+    imported_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc), description="When this was imported")
 
 
 # ---- AI Enrichment Metadata ----
@@ -173,7 +198,15 @@ class LexiconEntry(BaseModel):
         description="Disambiguates homonyms (e.g., 'bank (financial)' vs 'bank (couch)'). Usually None for unique lemma+pos."
     )
 
-    translations: list[str] = Field(default_factory=list, description="English translations")
+    # Translation and definition
+    translation: str = Field(
+        default="",
+        description="The single best, most common English translation for flashcards"
+    )
+    definition: Optional[str] = Field(
+        default=None,
+        description="Clear explanation with context and nuance (1-2 sentences). Mentions alternative translations if relevant."
+    )
 
     # Optional common fields
     difficulty: CEFRLevel = Field(default=CEFRLevel.UNKNOWN, description="CEFR difficulty level")
@@ -208,7 +241,8 @@ class AIEnrichedEntry(BaseModel):
     lemma: str
     pos: PartOfSpeech
     sense: Optional[str] = Field(default=None, description="Sense disambiguator for homonyms (usually None)")
-    translations: list[str] = Field(..., min_length=1, description="At least one English translation")
+    translation: str = Field(..., description="The single best, most common English translation")
+    definition: str = Field(..., description="Clear explanation with context and nuance (1-2 sentences)")
     difficulty: CEFRLevel = CEFRLevel.UNKNOWN
     tags: list[str] = Field(default_factory=list, max_length=5, description="Max 5 semantic tags")
 
@@ -217,8 +251,8 @@ class AIEnrichedEntry(BaseModel):
     verb_meta: Optional[VerbMetadata] = None
     adjective_meta: Optional[AdjectiveMetadata] = None
 
-    # For other POS types
-    general_examples: list[BilingualExample] = Field(default_factory=list, max_length=3)
+    # For other POS types (or fallback)
+    general_examples: list[BilingualExample] = Field(default_factory=list, max_length=2, description="2 general examples for words without specific POS metadata")
 
     class Config:
         use_enum_values = True
