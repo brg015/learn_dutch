@@ -125,6 +125,12 @@ def display_word(word: dict) -> None:
         print(f"    Comparative: {meta.get('comparative', 'N/A')}")
         print(f"    Superlative: {meta.get('superlative', 'N/A')}")
 
+        # Irregularity flags
+        if meta.get('is_irregular_comparative'):
+            print("    ⚠ Irregular comparative")
+        if meta.get('is_irregular_superlative'):
+            print("    ⚠ Irregular superlative")
+
         if meta.get('examples_base'):
             print("\n    Examples (Base):")
             print(format_examples(meta['examples_base']))
@@ -140,13 +146,27 @@ def display_word(word: dict) -> None:
         print(format_examples(word['general_examples'], indent="    "))
 
     # Enrichment metadata
-    if word.get('enrichment'):
-        enrich = word['enrichment']
+    word_enrich = word.get('word_enrichment', {})
+    pos_enrich = word.get('pos_enrichment', {})
+
+    if word_enrich.get('enriched') or pos_enrich.get('enriched'):
         print(f"\n  ENRICHMENT:")
-        print(f"    Model: {enrich.get('model_used', 'N/A')}")
-        print(f"    Version: {enrich.get('version', 1)}")
-        if enrich.get('lemma_normalized'):
-            print(f"    ⚠ Lemma normalized from: {word.get('import_data', {}).get('imported_word', 'N/A')}")
+
+        if word_enrich.get('enriched'):
+            print(f"    Phase 1 (Word): ✓")
+            print(f"      Model: {word_enrich.get('model_used', 'N/A')}")
+            print(f"      Version: {word_enrich.get('version', 1)}")
+            if word_enrich.get('lemma_normalized'):
+                print(f"      ⚠ Lemma normalized from: {word.get('import_data', {}).get('imported_word', 'N/A')}")
+            if word_enrich.get('approved'):
+                print(f"      ✓ Approved")
+
+        if pos_enrich.get('enriched'):
+            print(f"    Phase 2 (POS): ✓")
+            print(f"      Model: {pos_enrich.get('model_used', 'N/A')}")
+            print(f"      Version: {pos_enrich.get('version', 1)}")
+            if pos_enrich.get('approved'):
+                print(f"      ✓ Approved")
 
     print("=" * 80)
     print()
@@ -176,7 +196,7 @@ def main():
     args = parser.parse_args()
 
     # Build query
-    query = {"enrichment.enriched": True}
+    query = {"word_enrichment.enriched": True}
     if args.lemma:
         query["lemma"] = args.lemma
     if args.pos:

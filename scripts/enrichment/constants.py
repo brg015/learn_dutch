@@ -34,7 +34,7 @@ Instructions:
   * For uniquely Dutch concepts (like "gezellig"), provide cultural context
   * Help learners understand beyond literal translation
 - Estimate CEFR difficulty level (A1-C2)
-- Add relevant semantic tags (max 5)
+- Add up to 3 semantic tags representing the highest-level conceptual domains the word belongs to, avoiding synonyms and narrow subcategories
 - Provide {n_examples} general example sentences in both Dutch and English
 
 General Guidelines:
@@ -61,10 +61,12 @@ Fixed Prepositions (Optional):
 - Identify fixed prepositions for this noun (if any)
 - Only include strongly conventional prepositions (e.g., "angst voor", "behoefte aan", "respect voor")
 - Many nouns don't have fixed prepositions - return null if uncertain
-- For each preposition, specify:
+- For each preposition, provide:
   * usage_frequency: "dominant" (most natural, 80%+), "common" (also used, 15-30%), "rare" (occasional but notable, <15%)
   * meaning_context: explanation if different prepositions change meaning
-  * example: bilingual sentence showing usage
+  * examples: {n_examples} bilingual sentences showing usage
+    → Use contexts that make the preposition choice clear and natural
+    → Prefer situations where this preposition is the most idiomatic choice
 - Maximum 2 prepositions (most nouns have at most one)
 - Order by frequency (dominant first)
 
@@ -105,6 +107,9 @@ Prepositional Verbs:
   * meaning: English translation of the phrasal verb (e.g., "to think of", "to wait for")
   * case_note: grammatical notes if relevant (optional)
   * examples: {n_examples} bilingual example sentences showing this prepositional use
+    → IMPORTANT: Use contexts that make the preposition choice clear and natural
+    → Prefer situations where this preposition is the most idiomatic choice
+    → Avoid generic contexts where multiple prepositions could work equally well
 - Focus on high-frequency combinations (max 5-6)
 - If no prepositions are typically used with this verb, leave the list empty
 - These are verb-preposition chunks that learners should memorize as units
@@ -127,21 +132,40 @@ Guidelines:
 ADJECTIVE_INSTRUCTIONS = """For this adjective, provide complete metadata:
 
 Required Fields:
-- comparative form (e.g., groot → groter) - REQUIRED
-  * For regular adjectives, add -er/-st
-  * For irregular ones, provide the correct form (e.g., goed → beter, veel → meer)
-  * For adjectives that use "meer/meest" (more/most), still provide both forms if possible
-    (e.g., tevreden can be "tevredener" or "meer tevreden" - provide "tevredener" as comparative)
-- superlative form (e.g., groot → grootst) - REQUIRED
+- comparative form (e.g., groot → groter, goed → beter, tevreden → meer tevreden) - REQUIRED
+  * ALWAYS provide a form (required field, never leave blank)
+  * Choose the MOST COMMONLY USED form if multiple options exist
+    → If "meer [adjective]" is more common than "[adjective]er", use "meer [adjective]"
+    → If the inflected form is more common, use that
+  * Examples MUST use the same form you provide here (consistency is critical for learners)
+
+- superlative form (e.g., groot → grootst, goed → best, tevreden → meest tevreden) - REQUIRED
+  * ALWAYS provide a form (required field, never leave blank)
+  * Choose the MOST COMMONLY USED form if multiple options exist
+    → If "meest [adjective]" is more common than "[adjective]st", use "meest [adjective]"
+    → If the inflected form is more common, use that
+  * Examples MUST use the same form you provide here (consistency is critical for learners)
+
+- Irregularity flags (REQUIRED for both comparative and superlative):
+  * is_irregular_comparative: true if ANY of the following apply:
+    → Completely different stem (goed → beter, veel → meer)
+    → Uses "meer" instead of -er (tevreden → meer tevreden)
+    → Unusual spelling changes (jong → jonger with single 'g')
+  * is_irregular_superlative: true if ANY of the following apply:
+    → Completely different stem (goed → best, veel → meest)
+    → Uses "meest" instead of -st (tevreden → meest tevreden)
+    → Unusual spelling changes
 
 Fixed Prepositions (Optional):
 - Identify fixed prepositions for this adjective (if any)
 - Only include prepositions that are strongly conventional (not just possible)
 - Examples: "bang voor" (afraid of), "trots op" (proud of), "goed in" (good at)
-- For each preposition, specify:
+- For each preposition, provide:
   * usage_frequency: "dominant" (most natural, 80%+), "common" (also used, 15-30%), "rare" (occasional but notable, <15%)
   * meaning_context: explanation if different prepositions have different meanings (e.g., "bekend met" vs "bekend om")
-  * example: bilingual sentence showing usage
+  * examples: {n_examples} bilingual sentences showing usage
+    → Use contexts that make the preposition choice clear and natural
+    → Prefer situations where this preposition is the most idiomatic choice
 - Maximum 3 prepositions (prioritize most useful for learners)
 - Order by frequency (dominant first)
 - If uncertain or the adjective doesn't have conventional fixed prepositions, return null

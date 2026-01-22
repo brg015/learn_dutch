@@ -84,7 +84,7 @@ def get_all_words(
     query = {}
 
     if enriched_only:
-        query["enrichment.enriched"] = True
+        query["word_enrichment.enriched"] = True
 
     if tag:
         # Match tag in either user_tags OR AI-generated tags
@@ -144,7 +144,7 @@ def get_random_word(
     query = {}
 
     if enriched_only:
-        query["enrichment.enriched"] = True
+        query["word_enrichment.enriched"] = True
 
     if tag:
         # Match tag in either user_tags OR AI-generated tags
@@ -196,7 +196,7 @@ def get_words_by_tag(tag: str, enriched_only: bool = True) -> list[dict]:
     }
 
     if enriched_only:
-        query["enrichment.enriched"] = True
+        query["word_enrichment.enriched"] = True
 
     return list(collection.find(query))
 
@@ -215,7 +215,7 @@ def count_words(enriched_only: bool = False) -> int:
 
     query = {}
     if enriched_only:
-        query["enrichment.enriched"] = True
+        query["word_enrichment.enriched"] = True
 
     return collection.count_documents(query)
 

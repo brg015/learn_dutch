@@ -1,15 +1,27 @@
 """
 Enrich existing MongoDB lexicon entries with AI-generated metadata.
 
-This script updates words that are already in MongoDB but not yet enriched.
-It can enrich all unenriched words or filter by user_tags.
+This script uses a two-phase enrichment process:
+1. Phase 1: Basic word info (lemma, POS, translation, definition, etc.)
+2. Phase 2: POS-specific metadata (only for nouns, verbs, adjectives)
+
+Benefits:
+- Cost-efficient (words without POS metadata skip Phase 2)
+- Selective re-enrichment (re-run only Phase 2 for specific POS)
+- Cleaner, more focused prompts
 
 Usage:
-    # Enrich all unenriched words
-    python -m scripts.enrich_and_update [--batch-size N] [--dry-run]
+    # Enrich all unenriched words (both phases)
+    python -m scripts.enrichment.enrich_and_update [--batch-size N] [--dry-run]
+
+    # Only run Phase 1 (basic enrichment)
+    python -m scripts.enrichment.enrich_and_update --phase 1
+
+    # Only run Phase 2 for words that have Phase 1 but not Phase 2
+    python -m scripts.enrichment.enrich_and_update --phase 2
 
     # Enrich only words with specific tag
-    python -m scripts.enrich_and_update --user-tag "Chapter 10"
+    python -m scripts.enrichment.enrich_and_update --user-tag "Chapter 10"
 """
 
 from __future__ import annotations
@@ -17,12 +29,13 @@ from __future__ import annotations
 import argparse
 import os
 from datetime import datetime, timezone
-from typing import Optional
+from typing import Optional, Literal
 
 from dotenv import load_dotenv
 from pymongo import MongoClient
 
 from scripts.enrichment.enrich_modular import enrich_basic, enrich_pos
+from core.schemas import PartOfSpeech
 
 # Load environment
 load_dotenv()
@@ -32,20 +45,22 @@ DB_NAME = "dutch_trainer"
 COLLECTION_NAME = "lexicon"
 
 
-def enrich_and_update(
+def enrich_and_update_modular(
     user_tag_filter: Optional[str] = None,
     batch_size: Optional[int] = None,
     dry_run: bool = False,
-    model: str = "gpt-4o-2024-08-06"
+    model: str = "gpt-4o-2024-08-06",
+    phase: Optional[Literal[1, 2]] = None
 ) -> None:
     """
-    Enrich existing MongoDB entries with AI metadata.
+    Enrich existing MongoDB entries with AI metadata (modular approach).
 
     Args:
         user_tag_filter: Only enrich words with this user_tag (None = all)
         batch_size: Maximum number of words to enrich (None = all)
         dry_run: If True, don't actually update MongoDB
         model: OpenAI model to use for enrichment
+        phase: If specified, only run Phase 1 or Phase 2 (None = both)
     """
 
     # Connect to MongoDB
@@ -62,201 +77,273 @@ def enrich_and_update(
     client.admin.command("ping")
     print(f"✓ Connected to MongoDB: {DB_NAME}.{COLLECTION_NAME}\n")
 
-    # Build query for unenriched words
-    # Exclude phrases - they don't need AI enrichment
-    query = {
-        "enrichment.enriched": False,
-        "$or": [
-            {"entry_type": {"$exists": False}},  # Old entries without entry_type
-            {"entry_type": "word"}  # Only enrich words, not phrases
-        ]
+    # Determine which phase(s) to run
+    run_phase1 = phase is None or phase == 1
+    run_phase2 = phase is None or phase == 2
+
+    # Track statistics
+    stats = {
+        "phase1_success": 0,
+        "phase1_error": 0,
+        "phase1_skipped": 0,
+        "phase2_success": 0,
+        "phase2_error": 0,
+        "phase2_skipped": 0,
     }
 
-    if user_tag_filter:
-        query["user_tags"] = user_tag_filter
-        print(f"Filter: user_tag = '{user_tag_filter}'")
+    # ---- PHASE 1: Basic Enrichment ----
+    if run_phase1:
+        print(f"{'='*60}")
+        print("PHASE 1: Basic Enrichment")
+        print(f"{'='*60}\n")
 
-    # Find unenriched words
-    cursor = collection.find(query)
+        # Build query for Phase 1 (unenriched words)
+        query = {
+            "word_enrichment.enriched": False,
+            "$or": [
+                {"entry_type": {"$exists": False}},
+                {"entry_type": "word"}
+            ]
+        }
 
-    if batch_size:
-        cursor = cursor.limit(batch_size)
-        print(f"Batch size limit: {batch_size}")
+        if user_tag_filter:
+            query["user_tags"] = user_tag_filter
+            print(f"Filter: user_tag = '{user_tag_filter}'")
 
-    words = list(cursor)
+        cursor = collection.find(query)
+        if batch_size:
+            cursor = cursor.limit(batch_size)
+            print(f"Batch size limit: {batch_size}")
 
-    if len(words) == 0:
-        print("No unenriched words found matching criteria")
-        return
+        words = list(cursor)
 
-    print(f"Found {len(words)} unenriched words\n")
-    print(f"{'='*60}")
-    print("Starting enrichment...")
-    print(f"{'='*60}\n")
-
-    # Process each word
-    success_count = 0
-    error_count = 0
-    skipped_count = 0
-
-    for idx, doc in enumerate(words, 1):
-        # Get import data (fallback to lemma/translation if no import_data)
-        if doc.get("import_data"):
-            dutch = doc["import_data"]["imported_word"]
-            english = doc["import_data"]["imported_translation"]
+        if len(words) == 0:
+            print("No words need Phase 1 enrichment\n")
         else:
-            dutch = doc["lemma"]
-            # Handle both old (translations list) and new (translation string) schema
-            if doc.get("translation"):
-                english = doc["translation"]
-            else:
-                english = ""
+            print(f"Found {len(words)} words needing Phase 1 enrichment\n")
 
-        print(f"\n[{idx}/{len(words)}] Processing: {dutch} ({english})")
+            for idx, doc in enumerate(words, 1):
+                # Get import data (fallback to lemma/translation)
+                if doc.get("import_data"):
+                    dutch = doc["import_data"]["imported_word"]
+                    english = doc["import_data"]["imported_translation"]
+                else:
+                    dutch = doc.get("lemma", "")
+                    english = doc.get("translation", "")
 
-        try:
-            # BEFORE AI call: Check if this imported_word already has an enriched entry
-            # (avoids AI call if "liep" was already enriched and normalized to "lopen")
-            existing_with_import = collection.find_one({
-                "import_data.imported_word": dutch,
-                "enrichment.enriched": True,
-                "_id": {"$ne": doc["_id"]}  # Don't match self
-            })
+                print(f"\n[{idx}/{len(words)}] Phase 1: {dutch} ({english})")
 
-            if existing_with_import:
-                skipped_count += 1
-                lemma = existing_with_import.get("lemma", dutch)
-                print(f"  ⚠ Skipped - '{dutch}' already enriched as '{lemma}'")
-                continue
+                try:
+                    # Check if already enriched (shouldn't happen, but safety check)
+                    if doc.get("enrichment", {}).get("word_enriched"):
+                        stats["phase1_skipped"] += 1
+                        print(f"  ⚠ Skipped - already has Phase 1 enrichment")
+                        continue
 
-            # Phase 1: Basic enrichment (lemma, POS, translation, etc.)
-            print(f"  Phase 1: Basic enrichment...")
-            basic_enriched = enrich_basic(dutch, english, model=model)
-            print(f"  ✓ Phase 1 complete - Lemma: {basic_enriched.lemma}, POS: {basic_enriched.pos}")
+                    # Enrich with AI (Phase 1)
+                    print(f"  Enriching with AI...")
+                    basic = enrich_basic(dutch, english, model=model)
+                    print(f"  ✓ AI enriched - POS: {basic.pos}, Difficulty: {basic.difficulty}")
 
-            # AFTER Phase 1: Check if the resulting lemma+POS already exists
-            # This saves Phase 2 cost if we find a match
-            existing_enriched_lemma = collection.find_one({
-                "lemma": basic_enriched.lemma,
-                "pos": basic_enriched.pos,
-                "enrichment.enriched": True,
-                "_id": {"$ne": doc["_id"]}  # Don't match self
-            })
+                    # Check if lemma was normalized
+                    lemma_normalized = basic.lemma.lower() != dutch.lower()
+                    if lemma_normalized:
+                        print(f"  → Lemma normalized: '{dutch}' → '{basic.lemma}'")
 
-            if existing_enriched_lemma:
-                skipped_count += 1
-                print(f"  ⚠ Skipped Phase 2 - '{basic_enriched.lemma}' ({basic_enriched.pos}) already enriched in DB")
-                continue
+                    # Check if this {lemma, pos} already exists with Phase 2 enrichment completed
+                    existing_enriched = collection.find_one({
+                        "lemma": basic.lemma,
+                        "pos": basic.pos,
+                        "pos_enrichment.enriched": True,
+                        "_id": {"$ne": doc["_id"]}  # Don't match self
+                    })
 
-            # Phase 2: POS-specific enrichment (if needed)
-            from core.schemas import PartOfSpeech, AIEnrichedEntry
+                    if existing_enriched:
+                        # Duplicate detected - log it and skip Phase 2
+                        stats["phase1_skipped"] += 1
+                        duplicate_info = {
+                            "redundant_entry": {
+                                "word_id": doc.get("word_id"),
+                                "imported_word": dutch,
+                                "imported_at": doc.get("import_data", {}).get("imported_at").isoformat() if doc.get("import_data", {}).get("imported_at") else None,
+                            },
+                            "existing_entry": {
+                                "word_id": existing_enriched.get("word_id"),
+                                "lemma": existing_enriched.get("lemma"),
+                                "pos": existing_enriched.get("pos"),
+                                "pos_enriched_at": existing_enriched.get("pos_enrichment", {}).get("enriched_at").isoformat() if existing_enriched.get("pos_enrichment", {}).get("enriched_at") else None,
+                            },
+                            "detected_at": datetime.now(timezone.utc).isoformat()
+                        }
 
-            noun_meta = None
-            verb_meta = None
-            adjective_meta = None
+                        # Log to duplicates list (will be saved at end)
+                        if "duplicates" not in stats:
+                            stats["duplicates"] = []
+                        stats["duplicates"].append(duplicate_info)
 
-            if basic_enriched.pos in [PartOfSpeech.NOUN, PartOfSpeech.VERB, PartOfSpeech.ADJECTIVE]:
-                print(f"  Phase 2: {basic_enriched.pos} enrichment...")
-                pos_metadata = enrich_pos(basic_enriched.lemma, basic_enriched.pos, basic_enriched.translation, model=model)
+                        print(f"  ⚠ DUPLICATE DETECTED - Lemma '{basic.lemma}' (POS: {basic.pos}) already exists!")
+                        print(f"    Existing entry: word_id={existing_enriched.get('word_id')}")
+                        print(f"    Redundant entry: word_id={doc.get('word_id')} (imported as '{dutch}')")
+                        print(f"    → Logged to duplicates file, skipping Phase 2")
+                        continue
 
-                # Assign to correct field
-                if basic_enriched.pos == PartOfSpeech.NOUN:
-                    noun_meta = pos_metadata
-                elif basic_enriched.pos == PartOfSpeech.VERB:
-                    verb_meta = pos_metadata
-                elif basic_enriched.pos == PartOfSpeech.ADJECTIVE:
-                    adjective_meta = pos_metadata
+                    # Prepare update
+                    update_doc = {
+                        "$set": {
+                            "lemma": basic.lemma,
+                            "pos": basic.pos,
+                            "sense": basic.sense,
+                            "translation": basic.translation,
+                            "definition": basic.definition,
+                            "difficulty": basic.difficulty,
+                            "tags": basic.tags,
+                            "general_examples": [ex.model_dump() for ex in basic.general_examples],
 
-                print(f"  ✓ Phase 2 complete")
-            else:
-                print(f"  → Phase 2 skipped (POS '{basic_enriched.pos}' doesn't need it)")
+                            # Phase 1 enrichment metadata
+                            "word_enrichment.enriched": True,
+                            "word_enrichment.enriched_at": datetime.now(timezone.utc),
+                            "word_enrichment.model_used": model,
+                            "word_enrichment.version": doc.get("word_enrichment", {}).get("version", 1),
+                            "word_enrichment.approved": False,
+                            "enrichment.lemma_normalized": lemma_normalized,
+                        }
+                    }
 
-            # Convert Phase 1 + Phase 2 results into AIEnrichedEntry format
-            # (needed because update code expects noun_meta/verb_meta/adjective_meta fields)
-            enriched = AIEnrichedEntry(
-                lemma=basic_enriched.lemma,
-                pos=basic_enriched.pos,
-                sense=basic_enriched.sense,
-                translation=basic_enriched.translation,
-                definition=basic_enriched.definition,
-                difficulty=basic_enriched.difficulty,
-                tags=basic_enriched.tags,
-                general_examples=basic_enriched.general_examples,
-                noun_meta=noun_meta,
-                verb_meta=verb_meta,
-                adjective_meta=adjective_meta,
-            )
+                    if not dry_run:
+                        collection.update_one({"_id": doc["_id"]}, update_doc)
 
-            print(f"  ✓ Enrichment complete - Difficulty: {enriched.difficulty}")
+                    stats["phase1_success"] += 1
+                    print(f"  ✓ {'[DRY RUN] Would update' if dry_run else 'Updated'} Phase 1 in MongoDB")
 
-            # Determine if lemma was normalized
-            lemma_normalized = enriched.lemma.lower() != dutch.lower()
-            if lemma_normalized:
-                print(f"  → Lemma normalized: '{dutch}' → '{enriched.lemma}'")
+                except Exception as e:
+                    stats["phase1_error"] += 1
+                    print(f"  ✗ Error: {e}")
 
-            # Prepare general_examples: copy from present examples if available
-            general_examples = []
+        print(f"\nPhase 1 Summary:")
+        print(f"  Success: {stats['phase1_success']}")
+        print(f"  Skipped: {stats['phase1_skipped']}")
+        print(f"  Errors:  {stats['phase1_error']}")
+        print()
 
-            # Check if AI provided general_examples
-            if enriched.general_examples:
-                general_examples = enriched.general_examples
-            else:
-                # Auto-populate from POS-specific examples
-                # For verbs, copy from examples_present
-                if enriched.verb_meta and enriched.verb_meta.examples_present:
-                    general_examples = enriched.verb_meta.examples_present[:2]  # Take first 2
-                # For nouns, copy from examples_singular
-                elif enriched.noun_meta and enriched.noun_meta.examples_singular:
-                    general_examples = enriched.noun_meta.examples_singular[:2]
-                # For adjectives, copy from examples_base
-                elif enriched.adjective_meta and enriched.adjective_meta.examples_base:
-                    general_examples = enriched.adjective_meta.examples_base[:2]
+    # ---- PHASE 2: POS-Specific Enrichment ----
+    if run_phase2:
+        print(f"{'='*60}")
+        print("PHASE 2: POS-Specific Enrichment")
+        print(f"{'='*60}\n")
 
-            # Prepare update
-            update_doc = {
-                "$set": {
-                    # Update lexicon fields (may differ from import_data)
-                    "lemma": enriched.lemma,
-                    "pos": enriched.pos,
-                    "translation": enriched.translation,
-                    "definition": enriched.definition,
-                    "difficulty": enriched.difficulty,
-                    "tags": enriched.tags,
+        # Build query for Phase 2 (words with Phase 1 but not Phase 2)
+        query = {
+            "word_enrichment.enriched": True,
+            "pos_enrichment.enriched": False,
+            "pos": {"$in": ["noun", "verb", "adjective"]},
+            "$or": [
+                {"entry_type": {"$exists": False}},
+                {"entry_type": "word"}
+            ]
+        }
 
-                    # POS-specific metadata
-                    "noun_meta": enriched.noun_meta.model_dump() if enriched.noun_meta else None,
-                    "verb_meta": enriched.verb_meta.model_dump() if enriched.verb_meta else None,
-                    "adjective_meta": enriched.adjective_meta.model_dump() if enriched.adjective_meta else None,
-                    "general_examples": [ex.model_dump() for ex in general_examples] if general_examples else [],
+        if user_tag_filter:
+            query["user_tags"] = user_tag_filter
 
-                    # Enrichment metadata
-                    "enrichment.enriched": True,
-                    "enrichment.enriched_at": datetime.now(timezone.utc),
-                    "enrichment.model_used": model,
-                    "enrichment.version": doc.get("enrichment", {}).get("version", 1),
-                    "enrichment.lemma_normalized": lemma_normalized,
-                }
-            }
+        cursor = collection.find(query)
+        if batch_size and run_phase1:
+            # If we ran Phase 1, respect the same batch size
+            cursor = cursor.limit(batch_size)
 
-            if not dry_run:
-                # Update in MongoDB
-                collection.update_one({"_id": doc["_id"]}, update_doc)
+        words = list(cursor)
 
-            success_count += 1
-            print(f"  ✓ {'[DRY RUN] Would update' if dry_run else 'Updated'} in MongoDB")
+        if len(words) == 0:
+            print("No words need Phase 2 enrichment\n")
+        else:
+            print(f"Found {len(words)} words needing Phase 2 enrichment\n")
 
-        except Exception as e:
-            error_count += 1
-            print(f"  ✗ Error: {e}")
+            for idx, doc in enumerate(words, 1):
+                lemma = doc["lemma"]
+                pos = doc["pos"]
+                translation = doc["translation"]
 
-    # Summary
-    print(f"\n{'='*60}")
-    print("Enrichment complete!")
+                print(f"\n[{idx}/{len(words)}] Phase 2: {lemma} ({pos})")
+
+                try:
+                    # Enrich with AI (Phase 2)
+                    print(f"  Enriching {pos} metadata...")
+                    pos_meta = enrich_pos(lemma, PartOfSpeech(pos), translation, model=model)
+
+                    if pos_meta is None:
+                        stats["phase2_skipped"] += 1
+                        print(f"  ⚠ POS '{pos}' doesn't need Phase 2")
+                        continue
+
+                    print(f"  ✓ AI enriched {pos} metadata")
+
+                    # Prepare update
+                    update_doc = {
+                        "$set": {
+                            # Phase 2 enrichment metadata
+                            "pos_enrichment.enriched": True,
+                            "pos_enrichment.enriched_at": datetime.now(timezone.utc),
+                            "pos_enrichment.model_used": model,
+                            "pos_enrichment.version": doc.get("pos_enrichment", {}).get("version", 1),
+                            "pos_enrichment.approved": False,
+                        }
+                    }
+
+                    # Add POS-specific metadata
+                    if pos == "noun":
+                        update_doc["$set"]["noun_meta"] = pos_meta.model_dump()
+                    elif pos == "verb":
+                        update_doc["$set"]["verb_meta"] = pos_meta.model_dump()
+                    elif pos == "adjective":
+                        update_doc["$set"]["adjective_meta"] = pos_meta.model_dump()
+
+                    if not dry_run:
+                        collection.update_one({"_id": doc["_id"]}, update_doc)
+
+                    stats["phase2_success"] += 1
+                    print(f"  ✓ {'[DRY RUN] Would update' if dry_run else 'Updated'} Phase 2 in MongoDB")
+
+                except Exception as e:
+                    stats["phase2_error"] += 1
+                    print(f"  ✗ Error: {e}")
+
+        print(f"\nPhase 2 Summary:")
+        print(f"  Success: {stats['phase2_success']}")
+        print(f"  Skipped: {stats['phase2_skipped']}")
+        print(f"  Errors:  {stats['phase2_error']}")
+        print()
+
+    # Overall summary
     print(f"{'='*60}")
-    print(f"Successfully enriched: {success_count}")
-    print(f"Skipped (already enriched): {skipped_count}")
-    print(f"Errors:                {error_count}")
-    print(f"Total:                 {len(words)}")
+    print("Overall Summary")
+    print(f"{'='*60}")
+    print(f"Phase 1 - Success: {stats['phase1_success']}, Skipped: {stats['phase1_skipped']}, Errors: {stats['phase1_error']}")
+    print(f"Phase 2 - Success: {stats['phase2_success']}, Skipped: {stats['phase2_skipped']}, Errors: {stats['phase2_error']}")
+    print(f"Total   - Success: {stats['phase1_success'] + stats['phase2_success']}, Errors: {stats['phase1_error'] + stats['phase2_error']}")
+
+    # Save duplicates to JSON file if any were detected
+    if stats.get("duplicates"):
+        import json
+        from pathlib import Path
+
+        duplicates_file = Path("logs") / "duplicates_detected.json"
+        duplicates_file.parent.mkdir(exist_ok=True)
+
+        # Load existing duplicates if file exists
+        existing_duplicates = []
+        if duplicates_file.exists():
+            with open(duplicates_file, 'r', encoding='utf-8') as f:
+                existing_duplicates = json.load(f)
+
+        # Append new duplicates
+        existing_duplicates.extend(stats["duplicates"])
+
+        # Save back to file
+        with open(duplicates_file, 'w', encoding='utf-8') as f:
+            json.dump(existing_duplicates, f, indent=2, ensure_ascii=False)
+
+        print(f"\n⚠ DUPLICATES DETECTED: {len(stats['duplicates'])} duplicate(s) found and logged")
+        print(f"  File: {duplicates_file}")
+        print(f"  Run 'python -m scripts.maintenance.remove_duplicates' to review and delete")
 
     if dry_run:
         print("\n⚠ DRY RUN MODE - No changes were made to MongoDB")
@@ -264,7 +351,7 @@ def enrich_and_update(
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Enrich existing MongoDB entries with AI metadata"
+        description="Enrich existing MongoDB entries with AI metadata (modular approach)"
     )
     parser.add_argument(
         "--user-tag",
@@ -285,14 +372,21 @@ def main():
         default="gpt-4o-2024-08-06",
         help="OpenAI model to use for enrichment"
     )
+    parser.add_argument(
+        "--phase",
+        type=int,
+        choices=[1, 2],
+        help="Only run Phase 1 or Phase 2 (default: both)"
+    )
 
     args = parser.parse_args()
 
-    enrich_and_update(
+    enrich_and_update_modular(
         user_tag_filter=args.user_tag,
         batch_size=args.batch_size,
         dry_run=args.dry_run,
-        model=args.model
+        model=args.model,
+        phase=args.phase
     )
 
 

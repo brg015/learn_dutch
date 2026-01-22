@@ -409,5 +409,5 @@ else:
                         st.markdown("")
 
             # If no enriched data
-            if not word.get('enrichment', {}).get('enriched'):
+            if not word.get('word_enrichment', {}).get('enriched'):
                 st.info("This word hasn't been enriched yet. Run enrichment to see detailed information.")

@@ -52,7 +52,7 @@ def detect_duplicates():
 
     # Find all enriched entries
     enriched_entries = list(collection.find({
-        "enrichment.enriched": True
+        "word_enrichment.enriched": True
     }))
 
     if not enriched_entries:
@@ -95,7 +95,7 @@ def detect_duplicates():
             word_id = entry.get("word_id", "unknown")
             imported_word = entry.get("import_data", {}).get("imported_word", "N/A")
             imported_at = entry.get("import_data", {}).get("imported_at", "N/A")
-            enriched_at = entry.get("enrichment", {}).get("enriched_at", "N/A")
+            enriched_at = entry.get("word_enrichment", {}).get("enriched_at", "N/A")
             user_tags = entry.get("user_tags", [])
 
             # Format dates

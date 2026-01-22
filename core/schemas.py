@@ -74,9 +74,9 @@ class BilingualExample(BaseModel):
 
 
 class PrepositionExamples(BaseModel):
-    """Examples for a specific preposition."""
+    """DEPRECATED: Use VerbPrepositionUsage instead. Examples for a specific preposition."""
     preposition: str = Field(..., description="The preposition (e.g., 'met', 'over', 'aan')")
-    examples: list[BilingualExample] = Field(default_factory=list, max_length=2, description="2 example sentences using this preposition")
+    examples: list[BilingualExample] = Field(default_factory=list, max_length=MAX_EXAMPLES_PER_FORM, description="Example sentences using this preposition")
 
 
 class FixedPreposition(BaseModel):
@@ -95,7 +95,7 @@ class FixedPreposition(BaseModel):
         default=None,
         description="Explanation of meaning or context (e.g., 'when expressing fear', 'in formal contexts')"
     )
-    example: BilingualExample = Field(..., description="Example sentence showing usage")
+    examples: list[BilingualExample] = Field(default_factory=list, max_length=MAX_EXAMPLES_PER_FORM, description="Example sentences showing usage")
 
 
 # ---- POS-specific metadata ----
@@ -166,8 +166,18 @@ class VerbMetadata(BaseModel):
 
 class AdjectiveMetadata(BaseModel):
     """Metadata specific to adjectives."""
-    comparative: Optional[str] = None  # groter
-    superlative: Optional[str] = None  # grootst
+    comparative: Optional[str] = None  # groter, or "meer tevreden"
+    superlative: Optional[str] = None  # grootst, or "meest tevreden"
+
+    # Irregularity flags (important for FSRS difficulty and learner awareness)
+    is_irregular_comparative: Optional[bool] = Field(
+        default=False,
+        description="True if comparative is irregular (different stem, uses 'meer', or unusual spelling)"
+    )
+    is_irregular_superlative: Optional[bool] = Field(
+        default=False,
+        description="True if superlative is irregular (different stem, uses 'meest', or unusual spelling)"
+    )
 
     # Fixed prepositions (e.g., "bang voor", "trots op", "goed in")
     fixed_prepositions: Optional[list[FixedPreposition]] = Field(
@@ -195,28 +205,23 @@ class ImportData(BaseModel):
 
 # ---- AI Enrichment Metadata ----
 
-class EnrichmentMetadata(BaseModel):
-    """Tracks AI enrichment status and provenance."""
-    # Monolithic enrichment (single-phase)
+class WordEnrichment(BaseModel):
+    """Phase 1 enrichment metadata - basic word info (lemma, POS, translation, etc.)."""
     enriched: bool = False
     enriched_at: Optional[datetime] = None
     model_used: Optional[str] = None  # e.g., "gpt-4o-2024-08-06"
     version: int = 1  # increment if re-enriched
-
-    # Modular enrichment (two-phase)
-    word_enriched: bool = False  # Phase 1: basic word info (lemma, pos, translation, etc.)
-    word_enriched_at: Optional[datetime] = None
-    word_model: Optional[str] = None
-    word_version: int = 1
-
-    pos_enriched: bool = False  # Phase 2: POS-specific metadata (conjugations, etc.)
-    pos_enriched_at: Optional[datetime] = None
-    pos_model: Optional[str] = None
-    pos_version: int = 1
-
-    # Common fields
-    approved: bool = False  # manual approval (future)
     lemma_normalized: bool = False  # did AI correct the lemma from imported_word?
+    approved: bool = False  # manual approval of Phase 1 data
+
+
+class PosEnrichment(BaseModel):
+    """Phase 2 enrichment metadata - POS-specific metadata (conjugations, declensions, etc.)."""
+    enriched: bool = False
+    enriched_at: Optional[datetime] = None
+    model_used: Optional[str] = None  # e.g., "gpt-4o-2024-08-06"
+    version: int = 1  # increment if re-enriched
+    approved: bool = False  # manual approval of Phase 2 data
 
 
 # ---- Main Lexicon Entry ----
@@ -272,8 +277,9 @@ class LexiconEntry(BaseModel):
     # General examples (for POS types without specific metadata)
     general_examples: list[BilingualExample] = Field(default_factory=list, description="Examples for other POS types")
 
-    # AI enrichment tracking
-    enrichment: EnrichmentMetadata = Field(default_factory=EnrichmentMetadata)
+    # AI enrichment tracking (modular two-phase approach)
+    word_enrichment: WordEnrichment = Field(default_factory=WordEnrichment, description="Phase 1 enrichment metadata")
+    pos_enrichment: PosEnrichment = Field(default_factory=PosEnrichment, description="Phase 2 enrichment metadata")
 
     class Config:
         use_enum_values = True  # Store enum values as strings in MongoDB
@@ -322,7 +328,7 @@ class AIBasicEnrichment(BaseModel):
     definition: str = Field(..., description="Clear explanation with context and nuance (1-2 sentences)")
     difficulty: CEFRLevel = CEFRLevel.UNKNOWN
     tags: list[str] = Field(default_factory=list, max_length=5, description="Max 5 semantic tags")
-    general_examples: list[BilingualExample] = Field(default_factory=list, max_length=2, description="2 general examples")
+    general_examples: list[BilingualExample] = Field(default_factory=list, max_length=MAX_EXAMPLES_PER_FORM, description="General examples")
 
     class Config:
         use_enum_values = True
