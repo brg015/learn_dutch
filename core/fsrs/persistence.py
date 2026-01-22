@@ -9,6 +9,7 @@ Schema:
 """
 
 from __future__ import annotations
+import os
 import sqlite3
 from datetime import datetime, timezone
 from typing import Optional
@@ -18,15 +19,31 @@ from core.fsrs.memory_state import CardState
 from core.fsrs.constants import FeedbackGrade
 
 
-# Database path
+# Database path configuration
 DB_DIR = Path(__file__).parent.parent.parent / "logs"
-DB_PATH = DB_DIR / "learning.db"
+
+def get_db_path() -> Path:
+    """
+    Get the database path based on TEST_MODE environment variable.
+
+    Returns:
+        Path to learning.db (production) or test_learning.db (test mode)
+    """
+    test_mode = os.getenv("TEST_MODE", "false").lower() == "true"
+    db_name = "test_learning.db" if test_mode else "learning.db"
+    return DB_DIR / db_name
+
+
+def is_test_mode() -> bool:
+    """Check if running in test mode."""
+    return os.getenv("TEST_MODE", "false").lower() == "true"
 
 
 def get_connection() -> sqlite3.Connection:
     """Get database connection with row factory."""
     DB_DIR.mkdir(exist_ok=True)
-    conn = sqlite3.connect(DB_PATH)
+    db_path = get_db_path()
+    conn = sqlite3.connect(db_path)
     conn.row_factory = sqlite3.Row
     return conn
 

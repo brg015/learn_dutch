@@ -22,7 +22,7 @@ from typing import Optional
 from dotenv import load_dotenv
 from pymongo import MongoClient
 
-from scripts.enrichment.enrich_lexicon import enrich_word
+from scripts.enrichment.enrich_modular import enrich_basic, enrich_pos
 
 # Load environment
 load_dotenv()
@@ -109,8 +109,6 @@ def enrich_and_update(
             # Handle both old (translations list) and new (translation string) schema
             if doc.get("translation"):
                 english = doc["translation"]
-            elif doc.get("translations"):
-                english = doc["translations"][0]
             else:
                 english = ""
 
@@ -131,24 +129,65 @@ def enrich_and_update(
                 print(f"  ⚠ Skipped - '{dutch}' already enriched as '{lemma}'")
                 continue
 
-            # Enrich with AI
-            print(f"  Enriching with AI...")
-            enriched = enrich_word(dutch, english, model=model)
-            print(f"  ✓ AI enriched - POS: {enriched.pos}, Difficulty: {enriched.difficulty}")
+            # Phase 1: Basic enrichment (lemma, POS, translation, etc.)
+            print(f"  Phase 1: Basic enrichment...")
+            basic_enriched = enrich_basic(dutch, english, model=model)
+            print(f"  ✓ Phase 1 complete - Lemma: {basic_enriched.lemma}, POS: {basic_enriched.pos}")
 
-            # AFTER AI call: Also check if the resulting lemma+POS already exists
-            # (handles case where different imports normalize to same lemma)
+            # AFTER Phase 1: Check if the resulting lemma+POS already exists
+            # This saves Phase 2 cost if we find a match
             existing_enriched_lemma = collection.find_one({
-                "lemma": enriched.lemma,
-                "pos": enriched.pos,
+                "lemma": basic_enriched.lemma,
+                "pos": basic_enriched.pos,
                 "enrichment.enriched": True,
                 "_id": {"$ne": doc["_id"]}  # Don't match self
             })
 
             if existing_enriched_lemma:
                 skipped_count += 1
-                print(f"  ⚠ Skipped - '{enriched.lemma}' ({enriched.pos}) already enriched in DB")
+                print(f"  ⚠ Skipped Phase 2 - '{basic_enriched.lemma}' ({basic_enriched.pos}) already enriched in DB")
                 continue
+
+            # Phase 2: POS-specific enrichment (if needed)
+            from core.schemas import PartOfSpeech, AIEnrichedEntry
+
+            noun_meta = None
+            verb_meta = None
+            adjective_meta = None
+
+            if basic_enriched.pos in [PartOfSpeech.NOUN, PartOfSpeech.VERB, PartOfSpeech.ADJECTIVE]:
+                print(f"  Phase 2: {basic_enriched.pos} enrichment...")
+                pos_metadata = enrich_pos(basic_enriched.lemma, basic_enriched.pos, basic_enriched.translation, model=model)
+
+                # Assign to correct field
+                if basic_enriched.pos == PartOfSpeech.NOUN:
+                    noun_meta = pos_metadata
+                elif basic_enriched.pos == PartOfSpeech.VERB:
+                    verb_meta = pos_metadata
+                elif basic_enriched.pos == PartOfSpeech.ADJECTIVE:
+                    adjective_meta = pos_metadata
+
+                print(f"  ✓ Phase 2 complete")
+            else:
+                print(f"  → Phase 2 skipped (POS '{basic_enriched.pos}' doesn't need it)")
+
+            # Convert Phase 1 + Phase 2 results into AIEnrichedEntry format
+            # (needed because update code expects noun_meta/verb_meta/adjective_meta fields)
+            enriched = AIEnrichedEntry(
+                lemma=basic_enriched.lemma,
+                pos=basic_enriched.pos,
+                sense=basic_enriched.sense,
+                translation=basic_enriched.translation,
+                definition=basic_enriched.definition,
+                difficulty=basic_enriched.difficulty,
+                tags=basic_enriched.tags,
+                general_examples=basic_enriched.general_examples,
+                noun_meta=noun_meta,
+                verb_meta=verb_meta,
+                adjective_meta=adjective_meta,
+            )
+
+            print(f"  ✓ Enrichment complete - Difficulty: {enriched.difficulty}")
 
             # Determine if lemma was normalized
             lemma_normalized = enriched.lemma.lower() != dutch.lower()

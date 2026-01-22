@@ -125,6 +125,10 @@ def log_and_next(feedback_grade: fsrs.FeedbackGrade):
 
 # ---- UI Layout ----
 
+# Test mode indicator (if enabled)
+if fsrs.is_test_mode():
+    st.warning("⚠️ **TEST MODE** - Using test_learning.db (set TEST_MODE=false in .env for production)")
+
 st.title("🇳🇱 Dutch Vocabulary Trainer")
 
 # Sidebar: Filters and stats

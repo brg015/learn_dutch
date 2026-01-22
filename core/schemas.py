@@ -16,7 +16,7 @@ from pydantic import BaseModel, Field
 
 
 # Configuration
-MAX_EXAMPLES_PER_FORM = 2  # Maximum number of example sentences per form/tense
+MAX_EXAMPLES_PER_FORM = 5  # Maximum number of example sentences per form/tense
 
 
 class EntryType(str, Enum):
@@ -79,6 +79,25 @@ class PrepositionExamples(BaseModel):
     examples: list[BilingualExample] = Field(default_factory=list, max_length=2, description="2 example sentences using this preposition")
 
 
+class FixedPreposition(BaseModel):
+    """
+    Fixed preposition for adjectives/nouns - conventional collocations.
+
+    For adjectives/nouns where the preposition is selectionally preferred but not obligatory
+    (e.g., 'bang voor', 'trots op', 'behoefte aan'). The preposition introduces a complement.
+    """
+    preposition: str = Field(..., description="The preposition (e.g., 'voor', 'op', 'aan')")
+    usage_frequency: str = Field(
+        ...,
+        description="Frequency of this collocation: 'dominant' (80%+), 'common' (15-30%), 'rare' (<15%)"
+    )
+    meaning_context: Optional[str] = Field(
+        default=None,
+        description="Explanation of meaning or context (e.g., 'when expressing fear', 'in formal contexts')"
+    )
+    example: BilingualExample = Field(..., description="Example sentence showing usage")
+
+
 # ---- POS-specific metadata ----
 
 class NounMetadata(BaseModel):
@@ -87,12 +106,31 @@ class NounMetadata(BaseModel):
     plural: Optional[str] = None
     diminutive: Optional[str] = None
 
+    # Fixed prepositions (e.g., "angst voor", "behoefte aan")
+    fixed_prepositions: Optional[list[FixedPreposition]] = Field(
+        default=None,
+        description="Fixed prepositions for this noun (if any). Max 2, ordered by frequency."
+    )
+
     # Examples showing different forms
     examples_singular: list[BilingualExample] = Field(default_factory=list, max_length=MAX_EXAMPLES_PER_FORM)
     examples_plural: list[BilingualExample] = Field(default_factory=list, max_length=MAX_EXAMPLES_PER_FORM)
 
     class Config:
         use_enum_values = True  # Store enum values as strings
+
+
+class VerbPrepositionUsage(BaseModel):
+    """
+    Prepositional verb usage - the preposition is part of the verb phrase.
+
+    For verbs where the preposition is valency-bound (e.g., 'denken aan', 'houden van').
+    These are multi-word verbs where the preposition fundamentally changes the meaning.
+    """
+    preposition: str = Field(..., description="The preposition (e.g., 'aan', 'op', 'van')")
+    meaning: str = Field(..., description="English translation of the phrasal verb (e.g., 'to think of', 'to love')")
+    case_note: Optional[str] = Field(default=None, description="Grammatical notes about usage")
+    examples: list[BilingualExample] = Field(default_factory=list, max_length=MAX_EXAMPLES_PER_FORM, description="Example sentences")
 
 
 class VerbMetadata(BaseModel):
@@ -111,17 +149,10 @@ class VerbMetadata(BaseModel):
     is_irregular_past: Optional[bool] = None  # True if past tense is irregular
     is_irregular_participle: Optional[bool] = None  # True if past participle is irregular
 
-    # Common prepositions used with this verb
-    common_prepositions: list[str] = Field(
+    # Prepositional verb usage (phrasal verbs with fixed prepositions)
+    preposition_usage: list[VerbPrepositionUsage] = Field(
         default_factory=list,
-        description="All common prepositions used with this verb (e.g., 'aan', 'op', 'van')"
-    )
-
-    # Preposition-specific examples (organized by preposition)
-    # List of PrepositionExamples objects, one per preposition
-    preposition_examples: list[PrepositionExamples] = Field(
-        default_factory=list,
-        description="Examples grouped by preposition. Each preposition gets its own entry with 2 examples."
+        description="List of prepositional verb uses (e.g., 'denken aan', 'wachten op'). Max 5-6."
     )
 
     # Examples for different tenses/forms (for verbs without prepositions, or general tense examples)
@@ -137,6 +168,12 @@ class AdjectiveMetadata(BaseModel):
     """Metadata specific to adjectives."""
     comparative: Optional[str] = None  # groter
     superlative: Optional[str] = None  # grootst
+
+    # Fixed prepositions (e.g., "bang voor", "trots op", "goed in")
+    fixed_prepositions: Optional[list[FixedPreposition]] = Field(
+        default=None,
+        description="Fixed prepositions for this adjective (if any). Max 3, ordered by frequency."
+    )
 
     # Examples showing different forms
     examples_base: list[BilingualExample] = Field(default_factory=list, max_length=MAX_EXAMPLES_PER_FORM)
@@ -160,10 +197,24 @@ class ImportData(BaseModel):
 
 class EnrichmentMetadata(BaseModel):
     """Tracks AI enrichment status and provenance."""
+    # Monolithic enrichment (single-phase)
     enriched: bool = False
     enriched_at: Optional[datetime] = None
     model_used: Optional[str] = None  # e.g., "gpt-4o-2024-08-06"
     version: int = 1  # increment if re-enriched
+
+    # Modular enrichment (two-phase)
+    word_enriched: bool = False  # Phase 1: basic word info (lemma, pos, translation, etc.)
+    word_enriched_at: Optional[datetime] = None
+    word_model: Optional[str] = None
+    word_version: int = 1
+
+    pos_enriched: bool = False  # Phase 2: POS-specific metadata (conjugations, etc.)
+    pos_enriched_at: Optional[datetime] = None
+    pos_model: Optional[str] = None
+    pos_version: int = 1
+
+    # Common fields
     approved: bool = False  # manual approval (future)
     lemma_normalized: bool = False  # did AI correct the lemma from imported_word?
 
@@ -212,7 +263,6 @@ class LexiconEntry(BaseModel):
     difficulty: CEFRLevel = Field(default=CEFRLevel.UNKNOWN, description="CEFR difficulty level")
     tags: list[str] = Field(default_factory=list, description="AI-generated semantic tags (e.g., travel, finance, emotions)")
     user_tags: list[str] = Field(default_factory=list, description="User-defined tags (e.g., 'Chapter 10', 'work vocabulary')")
-    frequency_rank: Optional[int] = None  # lower = more common
 
     # POS-specific metadata (only populated for relevant types)
     noun_meta: Optional[NounMetadata] = None
@@ -229,20 +279,20 @@ class LexiconEntry(BaseModel):
         use_enum_values = True  # Store enum values as strings in MongoDB
 
 
-# ---- AI Enrichment Response Model ----
+# ---- AI Enrichment Response Models ----
 
 class AIEnrichedEntry(BaseModel):
     """
-    Structured output from AI enrichment.
+    Structured output from AI enrichment (monolithic approach).
 
-    This is what the LLM returns when enriching a word.
+    This is what the LLM returns when enriching a word in a single call.
     You can then merge this into a LexiconEntry.
     """
     lemma: str
     pos: PartOfSpeech
     sense: Optional[str] = Field(default=None, description="Sense disambiguator for homonyms (usually None)")
     translation: str = Field(..., description="The single best, most common English translation")
-    definition: str = Field(..., description="Clear explanation with context and nuance (1-2 sentences)")
+    definition: str = Field(..., description="Clear explanation with context and nuance (N sentences)")
     difficulty: CEFRLevel = CEFRLevel.UNKNOWN
     tags: list[str] = Field(default_factory=list, max_length=5, description="Max 5 semantic tags")
 
@@ -252,7 +302,51 @@ class AIEnrichedEntry(BaseModel):
     adjective_meta: Optional[AdjectiveMetadata] = None
 
     # For other POS types (or fallback)
-    general_examples: list[BilingualExample] = Field(default_factory=list, max_length=2, description="2 general examples for words without specific POS metadata")
+    general_examples: list[BilingualExample] = Field(default_factory=list, max_length=MAX_EXAMPLES_PER_FORM, description="general examples for words without specific POS metadata")
+
+    class Config:
+        use_enum_values = True
+
+
+class AIBasicEnrichment(BaseModel):
+    """
+    Phase 1 enrichment: Basic word information (modular approach).
+
+    Returns lemma, POS, translation, definition, difficulty, tags, and general examples.
+    Does NOT include POS-specific metadata (conjugations, declensions, etc.).
+    """
+    lemma: str
+    pos: PartOfSpeech
+    sense: Optional[str] = Field(default=None, description="Sense disambiguator for homonyms (usually None)")
+    translation: str = Field(..., description="The single best, most common English translation")
+    definition: str = Field(..., description="Clear explanation with context and nuance (1-2 sentences)")
+    difficulty: CEFRLevel = CEFRLevel.UNKNOWN
+    tags: list[str] = Field(default_factory=list, max_length=5, description="Max 5 semantic tags")
+    general_examples: list[BilingualExample] = Field(default_factory=list, max_length=2, description="2 general examples")
+
+    class Config:
+        use_enum_values = True
+
+
+class AINounEnrichment(BaseModel):
+    """Phase 2 enrichment for nouns: declension and examples."""
+    noun_meta: NounMetadata
+
+    class Config:
+        use_enum_values = True
+
+
+class AIVerbEnrichment(BaseModel):
+    """Phase 2 enrichment for verbs: conjugation, prepositions, and examples."""
+    verb_meta: VerbMetadata
+
+    class Config:
+        use_enum_values = True
+
+
+class AIAdjectiveEnrichment(BaseModel):
+    """Phase 2 enrichment for adjectives: comparison and examples."""
+    adjective_meta: AdjectiveMetadata
 
     class Config:
         use_enum_values = True
