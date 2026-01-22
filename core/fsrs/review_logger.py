@@ -28,7 +28,8 @@ def log_review(
     latency_ms: Optional[int] = None,
     timestamp: Optional[datetime] = None,
     session_id: Optional[str] = None,
-    session_position: Optional[int] = None
+    session_position: Optional[int] = None,
+    presentation_mode: Optional[str] = None
 ):
     """
     Log a review and update card state using FSRS algorithm.
@@ -52,6 +53,7 @@ def log_review(
         timestamp: Review timestamp (defaults to now)
         session_id: Optional session identifier (for analytics)
         session_position: Optional position in session (for analytics)
+        presentation_mode: Optional presentation mode ("words", "sentences", etc.)
     """
     if timestamp is None:
         timestamp = datetime.now(timezone.utc)
@@ -114,7 +116,8 @@ def log_review(
         d_eff_after=card.d_eff,
         is_ltm_event=is_ltm,
         session_id=session_id,
-        session_position=session_position
+        session_position=session_position,
+        presentation_mode=presentation_mode
     )
 
 
@@ -226,17 +229,18 @@ def get_card_state(
     return persistence.load_card_state(word_id, exercise_type)
 
 
-def get_due_cards(exercise_type: str) -> list[dict]:
+def get_due_cards(exercise_type: str, r_threshold: float = 0.70) -> list[dict]:
     """
-    Get all cards due for review (R < 0.70).
+    Get all cards due for review (R < threshold).
 
     Args:
         exercise_type: Type of exercise
+        r_threshold: Retrievability threshold (default: 0.70)
 
     Returns:
         List of due cards sorted by urgency (lowest R first)
     """
-    return persistence.get_due_cards(exercise_type)
+    return persistence.get_due_cards(exercise_type, r_threshold=r_threshold)
 
 
 def get_all_cards_with_state(exercise_type: str) -> list[dict]:

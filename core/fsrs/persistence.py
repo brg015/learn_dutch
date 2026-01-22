@@ -143,6 +143,7 @@ def init_db():
             -- Session context (optional, for analytics)
             session_id TEXT,
             session_position INTEGER,
+            presentation_mode TEXT,  -- How word was presented: "words", "sentences", etc.
 
             FOREIGN KEY (word_id, exercise_type)
                 REFERENCES card_state (word_id, exercise_type)
@@ -164,6 +165,14 @@ def init_db():
         CREATE INDEX IF NOT EXISTS idx_review_events_timestamp
         ON review_events (timestamp)
     """)
+
+    # Migration: Add presentation_mode column if it doesn't exist
+    try:
+        cursor.execute("SELECT presentation_mode FROM review_events LIMIT 1")
+    except sqlite3.OperationalError:
+        # Column doesn't exist, add it
+        cursor.execute("ALTER TABLE review_events ADD COLUMN presentation_mode TEXT")
+        print("✓ Migrated review_events table: added presentation_mode column")
 
     conn.commit()
     conn.close()
@@ -275,7 +284,8 @@ def log_review_event(
     d_eff_after: float,
     is_ltm_event: bool,
     session_id: Optional[str] = None,
-    session_position: Optional[int] = None
+    session_position: Optional[int] = None,
+    presentation_mode: Optional[str] = None
 ):
     """
     Log a review event to the database.
@@ -298,6 +308,7 @@ def log_review_event(
         is_ltm_event: True for LTM event, False for STM
         session_id: Optional session identifier (for analytics)
         session_position: Optional position in session (0-indexed, for analytics)
+        presentation_mode: Optional presentation mode ("words", "sentences", etc.)
     """
     conn = get_connection()
     cursor = conn.cursor()
@@ -308,8 +319,8 @@ def log_review_event(
             timestamp, feedback_grade, latency_ms,
             stability_before, difficulty_before, d_eff_before, retrievability_before,
             stability_after, difficulty_after, d_eff_after,
-            is_ltm_event, session_id, session_position
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            is_ltm_event, session_id, session_position, presentation_mode
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     """, (
         word_id, exercise_type, lemma, pos,
         timestamp.isoformat(),
@@ -324,7 +335,8 @@ def log_review_event(
         d_eff_after,
         1 if is_ltm_event else 0,
         session_id,
-        session_position
+        session_position,
+        presentation_mode
     ))
 
     conn.commit()
