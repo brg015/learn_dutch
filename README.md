@@ -1,3 +1,12 @@
+---
+title: Dutch Vocabulary Trainer
+emoji: "🇳🇱"
+colorFrom: teal
+colorTo: blue
+sdk: docker
+app_port: 8501
+---
+
 # Dutch Vocabulary Trainer
 
 A local-first vocabulary learning tool for Dutch using AI-enriched content and principled reinforcement strategies.
