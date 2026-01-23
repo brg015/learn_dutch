@@ -117,6 +117,7 @@ def load_next_word():
     """Load the next word from the session batch."""
     if st.session_state.session_position >= len(st.session_state.session_batch):
         # Session complete
+        flush_buffers()
         st.session_state.current_word = None
         st.session_state.activity = None
         return
