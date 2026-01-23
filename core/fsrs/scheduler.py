@@ -1,72 +1,55 @@
 """
-Scheduling - Main FSRS API for Review Management
+Scheduler - FSRS Algorithm Logic
 
-This module ties together all FSRS components and provides the main API
-for logging reviews and updating card state.
+Pure FSRS scheduling and state updates (no database calls).
 
 Main workflow:
-1. User reviews a card
-2. System determines if it's LTM or STM event
-3. Apply appropriate update rules
-4. Save state and log event
+1. Load card state (caller's responsibility)
+2. Determine if LTM or STM event
+3. Calculate retrievability
+4. Apply appropriate update rules
+5. Return updated card + event data dict
+
+This module handles ONLY the algorithm logic.
+Database I/O is handled by the database module.
 """
 
 from __future__ import annotations
 from datetime import datetime, timezone
-from typing import Optional
+from typing import Optional, Tuple
 
-from core.fsrs import memory_state, ltm_updates, stm_updates, persistence
+from core.fsrs import memory_state, ltm_updates, stm_updates
 from core.fsrs.constants import FeedbackGrade
 
 
-def log_review(
-    word_id: str,
-    lemma: str,
-    pos: str,
-    exercise_type: str,
+def process_review(
+    card: memory_state.CardState,
     feedback_grade: FeedbackGrade,
-    latency_ms: Optional[int] = None,
-    timestamp: Optional[datetime] = None,
-    session_id: Optional[str] = None,
-    session_position: Optional[int] = None,
-    presentation_mode: Optional[str] = None
-):
+    timestamp: Optional[datetime] = None
+) -> Tuple[memory_state.CardState, dict]:
     """
-    Log a review and update card state using FSRS algorithm.
-
-    This is the main entry point for the FSRS system.
-
-    Workflow:
-    1. Load card state (or initialize new card)
-    2. Determine if LTM or STM event
-    3. Calculate retrievability
-    4. Apply appropriate update rules
-    5. Save state and log event
-
+    Process a review and return updated card state + event data.
+    
+    This is the core FSRS algorithm. No database calls.
+    Caller is responsible for:
+    1. Loading the card
+    2. Saving the card after review
+    3. Persisting the event
+    
     Args:
-        word_id: Unique word identifier from MongoDB
-        lemma: Word lemma (for readability)
-        pos: Part of speech (for readability)
-        exercise_type: Type of exercise
+        card: CardState to update (may be new or existing)
         feedback_grade: User feedback (AGAIN, HARD, MEDIUM, EASY)
-        latency_ms: Response time in milliseconds (optional)
         timestamp: Review timestamp (defaults to now)
-        session_id: Optional session identifier (for analytics)
-        session_position: Optional position in session (for analytics)
-        presentation_mode: Optional presentation mode ("words", "sentences", etc.)
+        
+    Returns:
+        Tuple of (updated_card, event_data_dict)
+        event_data_dict is ready to pass to database.batch_log_review_events()
     """
     if timestamp is None:
         timestamp = datetime.now(timezone.utc)
 
-    # Load existing card state or initialize new card
-    card = persistence.load_card_state(word_id, exercise_type)
-
-    if card is None:
-        # New card - first review ever
-        card = memory_state.initialize_new_card(word_id, lemma, pos, exercise_type)
-        is_new_card = True
-    else:
-        is_new_card = False
+    # Detect if this is a new card
+    is_new_card = card.review_count == 0
 
     # Save state before update (for logging)
     stability_before = card.stability if not is_new_card else None
@@ -95,30 +78,29 @@ def log_review(
     # Increment review count
     card.review_count += 1
 
-    # Save updated state
-    persistence.save_card_state(card)
+    # Build event data dict (ready to persist)
+    event_data = {
+        'word_id': card.word_id,
+        'lemma': card.lemma,
+        'pos': card.pos,
+        'exercise_type': card.exercise_type,
+        'timestamp': timestamp,
+        'feedback_grade': feedback_grade,
+        'latency_ms': None,  # Will be set by caller if needed
+        'stability_before': stability_before,
+        'difficulty_before': difficulty_before,
+        'd_eff_before': d_eff_before,
+        'retrievability_before': retrievability_before,
+        'stability_after': card.stability,
+        'difficulty_after': card.difficulty,
+        'd_eff_after': card.d_eff,
+        'is_ltm_event': is_ltm,
+        'session_id': None,  # Will be set by caller if needed
+        'session_position': None,  # Will be set by caller if needed
+        'presentation_mode': None  # Will be set by caller if needed
+    }
 
-    # Log event
-    persistence.log_review_event(
-        word_id=word_id,
-        lemma=lemma,
-        pos=pos,
-        exercise_type=exercise_type,
-        timestamp=timestamp,
-        feedback_grade=feedback_grade,
-        latency_ms=latency_ms,
-        stability_before=stability_before,
-        difficulty_before=difficulty_before,
-        d_eff_before=d_eff_before,
-        retrievability_before=retrievability_before,
-        stability_after=card.stability,
-        difficulty_after=card.difficulty,
-        d_eff_after=card.d_eff,
-        is_ltm_event=is_ltm,
-        session_id=session_id,
-        session_position=session_position,
-        presentation_mode=presentation_mode
-    )
+    return card, event_data
 
 
 def _apply_ltm_update(
@@ -208,62 +190,3 @@ def _apply_stm_update(
 
     # Update timestamp (but not LTM timestamp)
     card.last_review_timestamp = timestamp
-
-
-# ---- Convenience functions for scheduler ----
-
-def get_card_state(
-    word_id: str,
-    exercise_type: str
-) -> Optional[memory_state.CardState]:
-    """
-    Get current card state.
-
-    Args:
-        word_id: Unique word identifier
-        exercise_type: Type of exercise
-
-    Returns:
-        CardState if card has been reviewed, None otherwise
-    """
-    return persistence.load_card_state(word_id, exercise_type)
-
-
-def get_due_cards(exercise_type: str, r_threshold: float = 0.70) -> list[dict]:
-    """
-    Get all cards due for review (R < threshold).
-
-    Args:
-        exercise_type: Type of exercise
-        r_threshold: Retrievability threshold (default: 0.70)
-
-    Returns:
-        List of due cards sorted by urgency (lowest R first)
-    """
-    return persistence.get_due_cards(exercise_type, r_threshold=r_threshold)
-
-
-def get_all_cards_with_state(exercise_type: str) -> list[dict]:
-    """
-    Get all reviewed cards with their current state.
-
-    Args:
-        exercise_type: Type of exercise
-
-    Returns:
-        List of all cards with state info
-    """
-    return persistence.get_all_cards_with_state(exercise_type)
-
-
-def get_recent_events(limit: int = 10) -> list[dict]:
-    """
-    Get recent review events.
-
-    Args:
-        limit: Maximum number of events
-
-    Returns:
-        List of recent events (newest first)
-    """
-    return persistence.get_recent_events(limit)

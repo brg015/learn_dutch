@@ -15,29 +15,30 @@ Quick start:
     # Initialize database
     fsrs.init_db()
 
-    # Log a review
-    fsrs.log_review(
-        lemma="verrekijker",
-        pos="noun",
-        exercise_type="word_translation",
-        feedback_grade=fsrs.FeedbackGrade.MEDIUM
-    )
+    # Process a review (algorithm only, no DB calls)
+    card, event_data = fsrs.process_review(card, feedback_grade)
 
     # Get due cards
     due_cards = fsrs.get_due_cards("word_translation")
 """
 
-# Main scheduling API
-from core.fsrs.review_logger import (
-    log_review,
+# Core scheduler API (algorithm logic)
+from core.fsrs.scheduler import process_review
+
+# Database API
+from core.fsrs.database import (
+    init_db,
+    reset_db,
+    is_test_mode,
+    load_card_state,
+    save_card_state,
+    batch_save_card_states,
+    batch_log_review_events,
     get_card_state,
     get_due_cards,
     get_all_cards_with_state,
     get_recent_events
 )
-
-# Database initialization
-from core.fsrs.persistence import init_db, reset_db, is_test_mode
 
 # Constants and parameters
 from core.fsrs.constants import (
@@ -64,15 +65,21 @@ from core.fsrs.memory_state import (
 
 
 __all__ = [
-    # Main API
-    "log_review",
+    # Core algorithm
+    "process_review",
+    
+    # Database operations
+    "init_db",
+    "reset_db",
+    "is_test_mode",
+    "load_card_state",
+    "save_card_state",
+    "batch_save_card_states",
+    "batch_log_review_events",
     "get_card_state",
     "get_due_cards",
     "get_all_cards_with_state",
     "get_recent_events",
-    "init_db",
-    "reset_db",
-    "is_test_mode",
 
     # Enums
     "FeedbackGrade",

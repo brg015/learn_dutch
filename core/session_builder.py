@@ -57,23 +57,21 @@ def _is_first_session_today() -> bool:
 
     Logic: If any review event exists today, it's not the first session.
     """
-    from core.fsrs.persistence import get_connection
+    from core.fsrs.database import get_session
+    from core.fsrs.models import ReviewEvent as ReviewEventModel
+    from sqlalchemy import func
 
-    conn = get_connection()
-    cursor = conn.cursor()
-
-    today_start = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
-
-    cursor.execute("""
-        SELECT COUNT(*) as count
-        FROM review_events
-        WHERE timestamp >= ?
-    """, (today_start.isoformat(),))
-
-    row = cursor.fetchone()
-    conn.close()
-
-    return row["count"] == 0
+    session = get_session()
+    try:
+        today_start = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
+        
+        count = session.query(func.count(ReviewEventModel.id)).filter(
+            ReviewEventModel.timestamp >= today_start.isoformat()
+        ).scalar()
+        
+        return count == 0
+    finally:
+        session.close()
 
 
 def _create_first_session(exercise_type: str, tag: Optional[str]) -> list[dict]:
@@ -207,61 +205,56 @@ def _get_stm_pool(exercise_type: str) -> list[dict]:
     Returns:
         List of card info dicts (lemma, pos, last_again_timestamp)
     """
-    from core.fsrs.persistence import get_connection
+    from core.fsrs.database import get_session
+    from core.fsrs.models import ReviewEvent as ReviewEventModel
+    from sqlalchemy import func, and_
 
-    conn = get_connection()
-    cursor = conn.cursor()
+    session = get_session()
+    try:
+        # Get start of today and yesterday (calendar days, not 48-hour window)
+        now = datetime.now(timezone.utc)
+        today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+        yesterday_start = today_start - timedelta(days=1)
 
-    # Get start of today and yesterday (calendar days, not 48-hour window)
-    now = datetime.now(timezone.utc)
-    today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
-    yesterday_start = today_start - timedelta(days=1)
+        # Find cards marked AGAIN in today or yesterday
+        again_events = session.query(
+            ReviewEventModel.lemma,
+            ReviewEventModel.pos,
+            func.max(ReviewEventModel.timestamp).label('last_again_timestamp')
+        ).filter(
+            and_(
+                ReviewEventModel.exercise_type == exercise_type,
+                ReviewEventModel.feedback_grade == int(FeedbackGrade.AGAIN),
+                ReviewEventModel.timestamp >= yesterday_start.isoformat()
+            )
+        ).group_by(ReviewEventModel.lemma, ReviewEventModel.pos).all()
 
-    # Find cards marked AGAIN in today or yesterday
-    cursor.execute("""
-        SELECT
-            lemma,
-            pos,
-            MAX(timestamp) as last_again_timestamp
-        FROM review_events
-        WHERE exercise_type = ?
-          AND feedback_grade = ?
-          AND timestamp >= ?
-        GROUP BY lemma, pos
-    """, (exercise_type, int(FeedbackGrade.AGAIN), yesterday_start.isoformat()))
+        # Filter out cards where last review (any feedback) was EASY
+        stm_pool = []
+        for lemma, pos, last_again_timestamp in again_events:
+            # Get last review event for this card
+            last_review = session.query(ReviewEventModel.feedback_grade).filter(
+                and_(
+                    ReviewEventModel.lemma == lemma,
+                    ReviewEventModel.pos == pos,
+                    ReviewEventModel.exercise_type == exercise_type
+                )
+            ).order_by(ReviewEventModel.timestamp.desc()).first()
 
-    again_cards = cursor.fetchall()
+            # If last review was not EASY, card stays in STM pool
+            if last_review and last_review.feedback_grade != int(FeedbackGrade.EASY):
+                stm_pool.append({
+                    "lemma": lemma,
+                    "pos": pos,
+                    "last_again_timestamp": last_again_timestamp
+                })
 
-    # Filter out cards where last review (any feedback) was EASY
-    stm_pool = []
-    for card in again_cards:
-        lemma, pos = card["lemma"], card["pos"]
+        # Sort by most recent failure (same-day failures first)
+        stm_pool.sort(key=lambda x: x["last_again_timestamp"], reverse=True)
 
-        # Get last review event for this card
-        cursor.execute("""
-            SELECT feedback_grade
-            FROM review_events
-            WHERE lemma = ? AND pos = ? AND exercise_type = ?
-            ORDER BY timestamp DESC
-            LIMIT 1
-        """, (lemma, pos, exercise_type))
-
-        last_review = cursor.fetchone()
-
-        # If last review was EASY, card exits STM pool
-        if last_review and last_review["feedback_grade"] != int(FeedbackGrade.EASY):
-            stm_pool.append({
-                "lemma": lemma,
-                "pos": pos,
-                "last_again_timestamp": card["last_again_timestamp"]
-            })
-
-    conn.close()
-
-    # Sort by most recent failure (same-day failures first)
-    stm_pool.sort(key=lambda x: x["last_again_timestamp"], reverse=True)
-
-    return stm_pool
+        return stm_pool
+    finally:
+        session.close()
 
 
 def _sample_new_cards(
