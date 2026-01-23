@@ -1,4 +1,4 @@
-﻿# python -m scripts.data.import_from_gsheet
+# python -m scripts.data.import_from_gsheet
 # python -m scripts.maintenance.reset_learning_db
 
 # python -m scripts.enrichment.enrich_and_update --batch-size 5
@@ -7,5 +7,4 @@
 # python -m scripts.maintenance.test_single_word tevreden satisfied
 
 # Pushing to HuggingFace
-git remote add space https://brg015:REMOVED@huggingface.co/spaces/brg015/dutch_trainer
-git push space main
+# git push space main
