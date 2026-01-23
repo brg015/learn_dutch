@@ -19,3 +19,6 @@ learning_summary.txt
 
 # Data files (now using Google Sheets)
 data/
+
+# Calude
+.claude/

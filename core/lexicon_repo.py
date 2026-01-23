@@ -22,6 +22,7 @@ load_dotenv()
 # Configuration
 DB_NAME = "dutch_trainer"
 COLLECTION_NAME = "lexicon"
+ONLY_ENRICHED = True # If True, only use enriched words
 
 # Global connection pool (reused across requests)
 _client: Optional[MongoClient] = None
@@ -65,6 +66,17 @@ def get_collection() -> Collection:
 
 # ---- Query Functions ----
 
+def _should_filter_enriched(enriched_only: bool) -> bool:
+    """
+    Determine whether to enforce enriched-only filtering.
+
+    If ONLY_ENRICHED is enabled, always filter to enriched words.
+    """
+    if ONLY_ENRICHED:
+        return True
+    return bool(enriched_only)
+
+
 def get_all_words(
     enriched_only: bool = False,
     tag: Optional[str] = None
@@ -83,7 +95,7 @@ def get_all_words(
 
     query = {}
 
-    if enriched_only:
+    if _should_filter_enriched(enriched_only):
         query["word_enrichment.enriched"] = True
 
     if tag:
@@ -112,10 +124,13 @@ def get_word_by_lemma_pos(lemma: str, pos: str) -> Optional[dict]:
     """
     collection = get_collection()
 
-    return collection.find_one({
+    query = {
         "lemma": lemma,
         "pos": pos
-    })
+    }
+    if ONLY_ENRICHED:
+        query["word_enrichment.enriched"] = True
+    return collection.find_one(query)
 
 
 # Backward compatibility alias
@@ -143,7 +158,7 @@ def get_random_word(
     # Build query
     query = {}
 
-    if enriched_only:
+    if _should_filter_enriched(enriched_only):
         query["word_enrichment.enriched"] = True
 
     if tag:
@@ -195,7 +210,7 @@ def get_words_by_tag(tag: str, enriched_only: bool = True) -> list[dict]:
         ]
     }
 
-    if enriched_only:
+    if _should_filter_enriched(enriched_only):
         query["word_enrichment.enriched"] = True
 
     return list(collection.find(query))
@@ -214,7 +229,7 @@ def count_words(enriched_only: bool = False) -> int:
     collection = get_collection()
 
     query = {}
-    if enriched_only:
+    if _should_filter_enriched(enriched_only):
         query["word_enrichment.enriched"] = True
 
     return collection.count_documents(query)
@@ -290,4 +305,7 @@ def get_word_by_id(word_id: str) -> Optional[dict]:
         Lexicon entry dictionary, or None if not found
     """
     collection = get_collection()
-    return collection.find_one({"word_id": word_id})
+    query = {"word_id": word_id}
+    if ONLY_ENRICHED:
+        query["word_enrichment.enriched"] = True
+    return collection.find_one(query)
