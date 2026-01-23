@@ -18,8 +18,12 @@ class WordActivity(AbstractActivity):
     def render_card_front(self) -> None:
         """Render word on front of card."""
         word = self.word
+        lemma_text = word["lemma"]
+        if word.get("pos") == "noun" and word.get("noun_meta", {}).get("article"):
+            article = word["noun_meta"]["article"]
+            lemma_text = f"{article} {lemma_text}"
         render_flashcard(
-            main_text=word["lemma"],
+            main_text=lemma_text,
             main_font_size="3.5em",
             bg_color="#f0f2f6"
         )

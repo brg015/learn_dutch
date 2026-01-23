@@ -1,4 +1,4 @@
-"""
+﻿"""
 Dutch Vocabulary Trainer - Main App
 
 Clean, modularized Streamlit UI for the FSRS vocabulary learning system.
@@ -251,14 +251,14 @@ def render_active_session():
         st.markdown("<br>", unsafe_allow_html=True)
         render_word_details(word)
 
+    if fsrs.is_test_mode():
+        st.caption("TEST MODE - Using test_learning_db")
+
 
 # ---- Main App ----
 
 def main():
     """Main app entry point."""
-    render_test_mode_warning()
-    st.title("🇳🇱 Dutch Vocabulary Trainer")
-
     # Session stats and quit button
     quit_clicked = render_session_stats()
     if quit_clicked:
@@ -274,3 +274,5 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+
