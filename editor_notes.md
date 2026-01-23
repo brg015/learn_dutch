@@ -6,5 +6,5 @@
 
 # python -m scripts.maintenance.test_single_word tevreden satisfied
 
-# Pushing to HuggingFace
+# Pushing to HuggingFace now
 # git push space main
