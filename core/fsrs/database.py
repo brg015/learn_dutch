@@ -86,6 +86,11 @@ def is_test_mode() -> bool:
     return os.getenv("TEST_MODE", "false").lower() == "true"
 
 
+def get_default_user_id() -> str:
+    """Get default user id for scoping review data."""
+    return os.getenv("DEFAULT_USER_ID", "ben")
+
+
 def init_db():
     """
     Initialize database schema if tables don't exist.
@@ -103,6 +108,16 @@ def init_db():
     if 'card_state' not in existing_tables or 'review_events' not in existing_tables:
         Base.metadata.create_all(engine)
         # Silent initialization - no spam on every rerun
+        return
+
+    # If tables exist, ensure schema includes user_id
+    card_columns = {col["name"] for col in inspector.get_columns("card_state")}
+    event_columns = {col["name"] for col in inspector.get_columns("review_events")}
+    if "user_id" not in card_columns or "user_id" not in event_columns:
+        raise RuntimeError(
+            "FSRS schema missing user_id column. "
+            "Please reset or migrate the database to the new per-user schema."
+        )
 
 
 def reset_db():
@@ -123,6 +138,7 @@ def reset_db():
 
 
 def load_card_state(
+    user_id: str,
     word_id: str,
     exercise_type: str
 ) -> Optional[CardState]:
@@ -130,6 +146,7 @@ def load_card_state(
     Load card state from database.
     
     Args:
+        user_id: User identifier for scoping review data
         word_id: Unique word identifier
         exercise_type: Type of exercise
     
@@ -139,6 +156,7 @@ def load_card_state(
     session = get_session()
     try:
         db_card = session.query(CardStateModel).filter(
+            CardStateModel.user_id == user_id,
             CardStateModel.word_id == word_id,
             CardStateModel.exercise_type == exercise_type
         ).first()
@@ -155,6 +173,7 @@ def load_card_state(
         )
         
         return CardState(
+            user_id=db_card.user_id,
             word_id=db_card.word_id,
             exercise_type=db_card.exercise_type,
             lemma=db_card.lemma,
@@ -183,6 +202,7 @@ def save_card_state(card: CardState):
     try:
         # Try to find existing card
         db_card = session.query(CardStateModel).filter(
+            CardStateModel.user_id == card.user_id,
             CardStateModel.word_id == card.word_id,
             CardStateModel.exercise_type == card.exercise_type
         ).first()
@@ -190,6 +210,7 @@ def save_card_state(card: CardState):
         if db_card is None:
             # Create new card
             db_card = CardStateModel(
+                user_id=card.user_id,
                 word_id=card.word_id,
                 exercise_type=card.exercise_type,
                 lemma=card.lemma,
@@ -237,6 +258,7 @@ def batch_save_card_states(cards: list[CardState]):
         for card in cards:
             # Try to find existing card
             db_card = session.query(CardStateModel).filter(
+                CardStateModel.user_id == card.user_id,
                 CardStateModel.word_id == card.word_id,
                 CardStateModel.exercise_type == card.exercise_type
             ).first()
@@ -244,6 +266,7 @@ def batch_save_card_states(cards: list[CardState]):
             if db_card is None:
                 # Create new card
                 db_card = CardStateModel(
+                    user_id=card.user_id,
                     word_id=card.word_id,
                     exercise_type=card.exercise_type,
                     lemma=card.lemma,
@@ -294,6 +317,7 @@ def batch_log_review_events(events: list[dict]):
     try:
         for event in events:
             review_event = ReviewEventModel(
+                user_id=event['user_id'],
                 word_id=event['word_id'],
                 exercise_type=event['exercise_type'],
                 lemma=event['lemma'],
@@ -319,12 +343,13 @@ def batch_log_review_events(events: list[dict]):
         session.close()
 
 
-def get_all_cards_with_state(exercise_type: str) -> list[dict]:
+def get_all_cards_with_state(exercise_type: str, user_id: str) -> list[dict]:
     """
     Get all cards with their current state and retrievability.
     
     Args:
         exercise_type: Type of exercise to filter by
+        user_id: User identifier for scoping review data
     
     Returns:
         List of dicts with card info and computed retrievability
@@ -334,6 +359,7 @@ def get_all_cards_with_state(exercise_type: str) -> list[dict]:
     session = get_session()
     try:
         db_cards = session.query(CardStateModel).filter(
+            CardStateModel.user_id == user_id,
             CardStateModel.exercise_type == exercise_type
         ).order_by(CardStateModel.last_review_timestamp.desc()).all()
         
@@ -349,6 +375,7 @@ def get_all_cards_with_state(exercise_type: str) -> list[dict]:
             retrievability = calculate_retrievability(db_card.stability, days_since)
             
             result.append({
+                "user_id": db_card.user_id,
                 "word_id": db_card.word_id,
                 "lemma": db_card.lemma,
                 "pos": db_card.pos,
@@ -368,18 +395,19 @@ def get_all_cards_with_state(exercise_type: str) -> list[dict]:
         session.close()
 
 
-def get_due_cards(exercise_type: str, r_threshold: float = 0.70) -> list[dict]:
+def get_due_cards(exercise_type: str, user_id: str, r_threshold: float = 0.70) -> list[dict]:
     """
     Get cards with retrievability below threshold (due for review).
     
     Args:
         exercise_type: Type of exercise to filter by
+        user_id: User identifier for scoping review data
         r_threshold: Retrievability threshold (default: 0.70)
     
     Returns:
         List of due cards, sorted by retrievability (most urgent first)
     """
-    all_cards = get_all_cards_with_state(exercise_type)
+    all_cards = get_all_cards_with_state(exercise_type, user_id)
     
     # Filter by threshold
     due_cards = [c for c in all_cards if c["retrievability"] < r_threshold]
@@ -390,11 +418,12 @@ def get_due_cards(exercise_type: str, r_threshold: float = 0.70) -> list[dict]:
     return due_cards
 
 
-def get_recent_events(limit: int = 10) -> list[dict]:
+def get_recent_events(user_id: str, limit: int = 10) -> list[dict]:
     """
     Get recent review events.
     
     Args:
+        user_id: User identifier for scoping review data
         limit: Maximum number of events to return
     
     Returns:
@@ -402,7 +431,9 @@ def get_recent_events(limit: int = 10) -> list[dict]:
     """
     session = get_session()
     try:
-        events = session.query(ReviewEventModel).order_by(
+        events = session.query(ReviewEventModel).filter(
+            ReviewEventModel.user_id == user_id
+        ).order_by(
             ReviewEventModel.timestamp.desc()
         ).limit(limit).all()
         
@@ -410,6 +441,7 @@ def get_recent_events(limit: int = 10) -> list[dict]:
         for event in events:
             result.append({
                 "id": event.id,
+                "user_id": event.user_id,
                 "word_id": event.word_id,
                 "exercise_type": event.exercise_type,
                 "lemma": event.lemma,
@@ -438,6 +470,7 @@ def get_recent_events(limit: int = 10) -> list[dict]:
 # ---- Convenience functions (aliases for backward compatibility) ----
 
 def get_card_state(
+    user_id: str,
     word_id: str,
     exercise_type: str
 ) -> Optional[CardState]:
@@ -445,10 +478,11 @@ def get_card_state(
     Get current card state (alias for load_card_state).
 
     Args:
+        user_id: User identifier for scoping review data
         word_id: Unique word identifier
         exercise_type: Type of exercise
 
     Returns:
         CardState if card has been reviewed, None otherwise
     """
-    return load_card_state(word_id, exercise_type)
+    return load_card_state(user_id, word_id, exercise_type)

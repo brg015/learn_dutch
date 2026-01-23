@@ -22,7 +22,8 @@ class CardState(Base):
     """
     __tablename__ = 'card_state'
 
-    # Primary key: composite of word_id and exercise_type
+    # Primary key: composite of user_id, word_id, and exercise_type
+    user_id = Column(String(255), primary_key=True, nullable=False)
     word_id = Column(String(255), primary_key=True, nullable=False)
     exercise_type = Column(String(50), primary_key=True, nullable=False)
 
@@ -48,7 +49,7 @@ class CardState(Base):
     d_floor = Column(Float, nullable=True)  # Floor difficulty from last LTM update
 
     def __repr__(self):
-        return f"<CardState({self.word_id}, {self.exercise_type})>"
+        return f"<CardState({self.user_id}, {self.word_id}, {self.exercise_type})>"
 
 
 class ReviewEvent(Base):
@@ -62,7 +63,8 @@ class ReviewEvent(Base):
     # Primary key
     id = Column(Integer, primary_key=True, autoincrement=True)
 
-    # Foreign key references
+    # User scope and foreign key references
+    user_id = Column(String(255), nullable=False)
     word_id = Column(String(255), nullable=False)
     exercise_type = Column(String(50), nullable=False)
 

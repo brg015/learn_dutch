@@ -28,6 +28,8 @@ from sqlalchemy.orm import Session
 from core.fsrs.models import Base, CardState as CardStateModel, ReviewEvent as ReviewEventModel
 from core.fsrs.database import get_engine, get_session
 
+MIGRATION_USER_ID = os.getenv("MIGRATION_USER_ID", "ben")
+
 
 def migrate_database(sqlite_path: str, is_test: bool = False) -> Dict[str, Any]:
     """
@@ -95,6 +97,7 @@ def migrate_database(sqlite_path: str, is_test: bool = False) -> Dict[str, Any]:
         
         for card in cards:
             db_card = CardStateModel(
+                user_id=MIGRATION_USER_ID,
                 word_id=card["word_id"],
                 exercise_type=card["exercise_type"],
                 lemma=card["lemma"],
@@ -121,6 +124,7 @@ def migrate_database(sqlite_path: str, is_test: bool = False) -> Dict[str, Any]:
         
         for event in events:
             db_event = ReviewEventModel(
+                user_id=MIGRATION_USER_ID,
                 word_id=event["word_id"],
                 exercise_type=event["exercise_type"],
                 lemma=event["lemma"],
@@ -201,16 +205,21 @@ def main():
         print("\nExample: postgresql://user:password@host:port/learning_db")
         sys.exit(1)
     
+    backup_dir = Path(__file__).parent.parent / "backups"
     db_dir = Path(__file__).parent.parent / "logs"
     
     results = {}
     
     # Migrate production database
-    prod_db_path = db_dir / "learning.db"
+    prod_db_path = backup_dir / "learning.db.backup"
+    if not prod_db_path.exists():
+        prod_db_path = db_dir / "learning.db"
     results["production"] = migrate_database(str(prod_db_path), is_test=False)
     
     # Migrate test database
-    test_db_path = db_dir / "test_learning.db"
+    test_db_path = backup_dir / "test_learning.db.backup"
+    if not test_db_path.exists():
+        test_db_path = db_dir / "test_learning.db"
     results["test"] = migrate_database(str(test_db_path), is_test=True)
     
     # Summary

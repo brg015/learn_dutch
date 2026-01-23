@@ -18,6 +18,14 @@ from app.ui import (
 )
 
 
+# ---- User Configuration ----
+
+USER_OPTIONS = {
+    "Ben": "ben",
+    "Test": "test",
+}
+
+
 # ---- Page Setup ----
 
 st.set_page_config(
@@ -42,6 +50,13 @@ _init_database()
 
 def _init_session_state():
     """Initialize all session state variables."""
+    if "user_id" not in st.session_state:
+        default_user_id = fsrs.get_default_user_id()
+        st.session_state.user_id = default_user_id
+        st.session_state.user_label = next(
+            (label for label, uid in USER_OPTIONS.items() if uid == default_user_id),
+            "Ben"
+        )
     if "current_word" not in st.session_state:
         st.session_state.current_word = None
     if "show_answer" not in st.session_state:
@@ -82,7 +97,8 @@ def start_new_session(mode: str):
     """
     batch = session_builder.create_session(
         exercise_type='word_translation',
-        tag=None
+        tag=None,
+        user_id=st.session_state.user_id
     )
 
     st.session_state.session_id = str(uuid.uuid4())
@@ -134,9 +150,10 @@ def process_feedback(feedback_grade: fsrs.FeedbackGrade):
             latency_ms = int(elapsed.total_seconds() * 1000)
 
         # Load or initialize card state
-        card = fsrs.load_card_state(word["word_id"], "word_translation")
+        card = fsrs.load_card_state(st.session_state.user_id, word["word_id"], "word_translation")
         if card is None:
             card = fsrs.CardState(
+                user_id=st.session_state.user_id,
                 word_id=word["word_id"],
                 exercise_type="word_translation",
                 lemma=word["lemma"],
@@ -153,6 +170,7 @@ def process_feedback(feedback_grade: fsrs.FeedbackGrade):
 
         # Process review
         updated_card, event_data = fsrs.process_review(card, feedback_grade)
+        event_data['user_id'] = st.session_state.user_id
         event_data['latency_ms'] = latency_ms
         event_data['session_id'] = st.session_state.session_id
         event_data['session_position'] = st.session_state.session_position
@@ -202,7 +220,21 @@ def render_test_mode_warning():
 
 def render_intro_screen():
     """Render intro screen with mode selection."""
+    st.title("🇳🇱 Dutch Vocabulary Trainer")
+    render_test_mode_warning()
     st.markdown("<br>" * 3, unsafe_allow_html=True)
+
+    user_labels = list(USER_OPTIONS.keys())
+    selected_label = st.selectbox(
+        "User",
+        user_labels,
+        index=user_labels.index(st.session_state.user_label)
+        if st.session_state.user_label in user_labels
+        else 0
+    )
+    st.session_state.user_label = selected_label
+    st.session_state.user_id = USER_OPTIONS[selected_label]
+    st.markdown(f"**Welcome {selected_label}**")
 
     if st.session_state.session_count > 0:
         render_session_complete()

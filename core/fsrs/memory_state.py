@@ -21,8 +21,9 @@ class CardState:
     """
     Memory state for a single card.
 
-    A card is uniquely identified by: (word_id, exercise_type)
+    A card is uniquely identified by: (user_id, word_id, exercise_type)
     """
+    user_id: str
     word_id: str  # Unique identifier from MongoDB
     exercise_type: str
 
@@ -136,6 +137,7 @@ def is_ltm_event(
 
 
 def initialize_new_card(
+    user_id: str,
     word_id: str,
     lemma: str,
     pos: str,
@@ -147,6 +149,7 @@ def initialize_new_card(
     Initialize state for a new card (never seen before).
 
     Args:
+        user_id: User identifier for scoping card state
         word_id: Unique word identifier from MongoDB
         lemma: Word lemma (for readability)
         pos: Part of speech (for readability)
@@ -160,6 +163,7 @@ def initialize_new_card(
     now = datetime.now(timezone.utc)
 
     return CardState(
+        user_id=user_id,
         word_id=word_id,
         exercise_type=exercise_type,
         lemma=lemma,

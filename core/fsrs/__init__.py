@@ -19,7 +19,7 @@ Quick start:
     card, event_data = fsrs.process_review(card, feedback_grade)
 
     # Get due cards
-    due_cards = fsrs.get_due_cards("word_translation")
+    due_cards = fsrs.get_due_cards("word_translation", user_id="ben")
 """
 
 # Core scheduler API (algorithm logic)
@@ -30,6 +30,7 @@ from core.fsrs.database import (
     init_db,
     reset_db,
     is_test_mode,
+    get_default_user_id,
     load_card_state,
     save_card_state,
     batch_save_card_states,
@@ -72,6 +73,7 @@ __all__ = [
     "init_db",
     "reset_db",
     "is_test_mode",
+    "get_default_user_id",
     "load_card_state",
     "save_card_state",
     "batch_save_card_states",

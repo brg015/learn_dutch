@@ -32,7 +32,8 @@ assert abs(LTM_FRACTION + NEW_FRACTION - 1.0) < 0.001, "LTM_FRACTION + NEW_FRACT
 
 def create_session(
     exercise_type: str = "word_translation",
-    tag: Optional[str] = None
+    tag: Optional[str] = None,
+    user_id: str = "ben"
 ) -> list[dict]:
     """
     Create a study session using three-pool logic.
@@ -40,18 +41,19 @@ def create_session(
     Args:
         exercise_type: Type of exercise (default: "word_translation")
         tag: Optional tag filter for new cards
+        user_id: User identifier for scoping review data
 
     Returns:
         List of word dictionaries for the session (shuffled)
     """
     # Determine if this is the first session today
-    if _is_first_session_today():
-        return _create_first_session(exercise_type, tag)
+    if _is_first_session_today(user_id):
+        return _create_first_session(exercise_type, tag, user_id)
     else:
-        return _create_subsequent_session(exercise_type, tag)
+        return _create_subsequent_session(exercise_type, tag, user_id)
 
 
-def _is_first_session_today() -> bool:
+def _is_first_session_today(user_id: str) -> bool:
     """
     Check if this is the first session of the day.
 
@@ -66,6 +68,7 @@ def _is_first_session_today() -> bool:
         today_start = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
         
         count = session.query(func.count(ReviewEventModel.id)).filter(
+            ReviewEventModel.user_id == user_id,
             ReviewEventModel.timestamp >= today_start.isoformat()
         ).scalar()
         
@@ -74,7 +77,7 @@ def _is_first_session_today() -> bool:
         session.close()
 
 
-def _create_first_session(exercise_type: str, tag: Optional[str]) -> list[dict]:
+def _create_first_session(exercise_type: str, tag: Optional[str], user_id: str) -> list[dict]:
     """
     Create first session of the day.
 
@@ -88,22 +91,23 @@ def _create_first_session(exercise_type: str, tag: Optional[str]) -> list[dict]:
     Args:
         exercise_type: Type of exercise
         tag: Optional tag filter for new cards
+        user_id: User identifier for scoping review data
 
     Returns:
         Shuffled session batch
     """
     # Check if any LTM history exists
-    all_cards = fsrs.get_all_cards_with_state(exercise_type)
+    all_cards = fsrs.get_all_cards_with_state(exercise_type, user_id)
     has_ltm_history = len(all_cards) > 0
 
     if not has_ltm_history:
         # No history: all new cards
-        new_cards = _sample_new_cards(SESSION_SIZE, exercise_type, tag)
+        new_cards = _sample_new_cards(SESSION_SIZE, exercise_type, tag, user_id)
         random.shuffle(new_cards)
         return new_cards
 
     # Get due cards (R < R_TARGET)
-    due_cards = fsrs.get_due_cards(exercise_type, r_threshold=R_TARGET)
+    due_cards = fsrs.get_due_cards(exercise_type, user_id, r_threshold=R_TARGET)
 
     # Calculate target counts
     ltm_target = int(SESSION_SIZE * LTM_FRACTION)
@@ -115,7 +119,7 @@ def _create_first_session(exercise_type: str, tag: Optional[str]) -> list[dict]:
 
     # Fill remainder with new cards
     new_count = SESSION_SIZE - ltm_count
-    new_batch = _sample_new_cards(new_count, exercise_type, tag)
+    new_batch = _sample_new_cards(new_count, exercise_type, tag, user_id)
 
     # Convert LTM cards to word dicts
     ltm_words = []
@@ -136,7 +140,7 @@ def _create_first_session(exercise_type: str, tag: Optional[str]) -> list[dict]:
     return session
 
 
-def _create_subsequent_session(exercise_type: str, tag: Optional[str]) -> list[dict]:
+def _create_subsequent_session(exercise_type: str, tag: Optional[str], user_id: str) -> list[dict]:
     """
     Create subsequent session (not first of day).
 
@@ -148,6 +152,7 @@ def _create_subsequent_session(exercise_type: str, tag: Optional[str]) -> list[d
     Args:
         exercise_type: Type of exercise
         tag: Optional tag filter for new cards
+        user_id: User identifier for scoping review data
 
     Returns:
         Shuffled session batch
@@ -155,7 +160,7 @@ def _create_subsequent_session(exercise_type: str, tag: Optional[str]) -> list[d
     session = []
 
     # 1. Draw from LTM pool (R < R_TARGET)
-    due_cards = fsrs.get_due_cards(exercise_type, r_threshold=R_TARGET)
+    due_cards = fsrs.get_due_cards(exercise_type, user_id, r_threshold=R_TARGET)
     ltm_count = min(len(due_cards), SESSION_SIZE)
 
     for card in due_cards[:ltm_count]:
@@ -170,7 +175,7 @@ def _create_subsequent_session(exercise_type: str, tag: Optional[str]) -> list[d
 
     # 2. If not full, draw from STM pool (recent AGAIN)
     if len(session) < SESSION_SIZE:
-        stm_pool = _get_stm_pool(exercise_type)
+        stm_pool = _get_stm_pool(exercise_type, user_id)
         stm_count = min(len(stm_pool), SESSION_SIZE - len(session))
 
         for card_info in stm_pool[:stm_count]:
@@ -182,7 +187,7 @@ def _create_subsequent_session(exercise_type: str, tag: Optional[str]) -> list[d
     # 3. If still not full, draw from new cards
     if len(session) < SESSION_SIZE:
         new_count = SESSION_SIZE - len(session)
-        new_batch = _sample_new_cards(new_count, exercise_type, tag)
+        new_batch = _sample_new_cards(new_count, exercise_type, tag, user_id)
         session.extend(new_batch)
 
     # Shuffle and return
@@ -190,7 +195,7 @@ def _create_subsequent_session(exercise_type: str, tag: Optional[str]) -> list[d
     return session
 
 
-def _get_stm_pool(exercise_type: str) -> list[dict]:
+def _get_stm_pool(exercise_type: str, user_id: str) -> list[dict]:
     """
     Get STM pool: cards marked AGAIN in last 0-1 calendar days.
 
@@ -201,6 +206,7 @@ def _get_stm_pool(exercise_type: str) -> list[dict]:
 
     Args:
         exercise_type: Type of exercise
+        user_id: User identifier for scoping review data
 
     Returns:
         List of card info dicts (lemma, pos, last_again_timestamp)
@@ -223,6 +229,7 @@ def _get_stm_pool(exercise_type: str) -> list[dict]:
             func.max(ReviewEventModel.timestamp).label('last_again_timestamp')
         ).filter(
             and_(
+                ReviewEventModel.user_id == user_id,
                 ReviewEventModel.exercise_type == exercise_type,
                 ReviewEventModel.feedback_grade == int(FeedbackGrade.AGAIN),
                 ReviewEventModel.timestamp >= yesterday_start.isoformat()
@@ -235,6 +242,7 @@ def _get_stm_pool(exercise_type: str) -> list[dict]:
             # Get last review event for this card
             last_review = session.query(ReviewEventModel.feedback_grade).filter(
                 and_(
+                    ReviewEventModel.user_id == user_id,
                     ReviewEventModel.lemma == lemma,
                     ReviewEventModel.pos == pos,
                     ReviewEventModel.exercise_type == exercise_type
@@ -260,7 +268,8 @@ def _get_stm_pool(exercise_type: str) -> list[dict]:
 def _sample_new_cards(
     count: int,
     exercise_type: str,
-    tag: Optional[str]
+    tag: Optional[str],
+    user_id: str
 ) -> list[dict]:
     """
     Sample new cards (never reviewed before).
@@ -269,6 +278,7 @@ def _sample_new_cards(
         count: Number of cards to sample
         exercise_type: Type of exercise
         tag: Optional tag filter
+        user_id: User identifier for scoping review data
 
     Returns:
         List of word dictionaries
@@ -277,7 +287,7 @@ def _sample_new_cards(
         return []
 
     # Get all reviewed cards for this exercise type
-    reviewed_cards = fsrs.get_all_cards_with_state(exercise_type)
+    reviewed_cards = fsrs.get_all_cards_with_state(exercise_type, user_id)
     reviewed_set = {(card["lemma"], card["pos"]) for card in reviewed_cards}
 
     # Get all words from lexicon
