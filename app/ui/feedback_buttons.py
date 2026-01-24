@@ -17,23 +17,53 @@ def render_feedback_buttons() -> fsrs.FeedbackGrade:
     """
     st.markdown("**How well did you remember this word?**")
 
-    row1_col1, row1_col2 = st.columns(2)
-    with row1_col1:
-        if st.button("❌ Again", use_container_width=True, help="Completely forgot"):
-            return fsrs.FeedbackGrade.AGAIN
+    st.markdown(
+        """
+        <style>
+        .stRadio div[role="radiogroup"] {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 0.5rem;
+        }
+        .stRadio label {
+            border: 1px solid #ddd;
+            border-radius: 10px;
+            padding: 0.55rem 0.6rem;
+            text-align: center;
+            background: #f9fafb;
+        }
+        .stRadio label:hover {
+            border-color: #bbb;
+            background: #f3f4f6;
+        }
+        .stRadio label div {
+            justify-content: center;
+            font-weight: 600;
+            color: #111;
+        }
+        .stRadio input {
+            display: none;
+        }
+        </style>
+        """,
+        unsafe_allow_html=True
+    )
 
-    with row1_col2:
-        if st.button("😰 Hard", use_container_width=True, help="Remembered with difficulty"):
-            return fsrs.FeedbackGrade.HARD
+    choice = st.radio(
+        "Answer",
+        ["❌ Again", "😰 Hard", "👍 Medium", "✨ Easy"],
+        index=None,
+        key="answer_choice",
+        label_visibility="collapsed"
+    )
 
-    row2_col1, row2_col2 = st.columns(2)
-    with row2_col1:
-        if st.button("👍 Medium", use_container_width=True, help="Remembered normally"):
-            return fsrs.FeedbackGrade.MEDIUM
-
-    with row2_col2:
-        if st.button("✨ Easy", use_container_width=True, help="Remembered easily"):
-            return fsrs.FeedbackGrade.EASY
-
-    return None
+    if choice is None:
+        return None
+    if choice.startswith("❌"):
+        return fsrs.FeedbackGrade.AGAIN
+    if choice.startswith("😰"):
+        return fsrs.FeedbackGrade.HARD
+    if choice.startswith("👍"):
+        return fsrs.FeedbackGrade.MEDIUM
+    return fsrs.FeedbackGrade.EASY
 

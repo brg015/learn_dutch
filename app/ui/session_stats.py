@@ -14,7 +14,7 @@ def render_session_stats() -> bool:
     Returns:
         True if quit button was clicked, False otherwise
     """
-    if not st.session_state.session_batch:
+    if not st.session_state.session_batch or st.session_state.current_word is None:
         return False
     
     col1, col2 = st.columns([4, 1])
@@ -22,13 +22,16 @@ def render_session_stats() -> bool:
     with col1:
         total = len(st.session_state.session_batch)
         current = st.session_state.session_position
-        st.markdown(f"**{current}/{total}**")
+        st.markdown(
+            f"<div style='font-size:0.9rem;color:#666;'>{current}/{total}</div>",
+            unsafe_allow_html=True
+        )
 
     with col2:
-        if st.button("X", help="Quit session"):
+        if st.button("×", help="Quit session"):
             return True
 
-    st.markdown("<hr style='margin: 0.30rem 0;'>", unsafe_allow_html=True)
+    st.markdown("<hr style='margin: 0.2rem 0;'>", unsafe_allow_html=True)
     return False
 
 

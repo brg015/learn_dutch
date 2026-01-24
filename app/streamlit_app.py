@@ -126,6 +126,8 @@ def load_next_word():
     st.session_state.current_word = word
     st.session_state.show_answer = False
     st.session_state.start_time = datetime.now(timezone.utc)
+    if "answer_choice" in st.session_state:
+        st.session_state.pop("answer_choice", None)
 
     # Create activity based on mode
     if st.session_state.learning_mode == "words":
@@ -262,7 +264,7 @@ def render_active_session():
     word = st.session_state.current_word
     activity = st.session_state.activity
 
-    st.markdown("<br>" * 2, unsafe_allow_html=True)
+    st.markdown("<br>", unsafe_allow_html=True)
 
     if not st.session_state.show_answer:
         # Show card front
