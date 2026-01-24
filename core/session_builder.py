@@ -113,17 +113,11 @@ def _create_first_session(exercise_type: str, tag: Optional[str], user_id: str) 
     ltm_target = int(SESSION_SIZE * LTM_FRACTION)
     new_target = int(SESSION_SIZE * NEW_FRACTION)
 
-    # Draw from LTM (or all available if fewer)
-    ltm_count = min(ltm_target, len(due_cards))
-    ltm_batch = due_cards[:ltm_count]
-
-    # Fill remainder with new cards
-    new_count = SESSION_SIZE - ltm_count
-    new_batch = _sample_new_cards(new_count, exercise_type, tag, user_id)
-
-    # Convert LTM cards to word dicts
+    # Draw from LTM due cards (eligible words only)
     ltm_words = []
-    for card in ltm_batch:
+    for card in due_cards:
+        if len(ltm_words) >= ltm_target:
+            break
         # Use word_id if available, otherwise fall back to lemma/pos
         if "word_id" in card:
             word = lexicon_repo.get_word_by_id(card["word_id"])
@@ -133,8 +127,43 @@ def _create_first_session(exercise_type: str, tag: Optional[str], user_id: str) 
         if word:
             ltm_words.append(word)
 
-    # Combine and shuffle
+    # Fill remainder with new cards
+    new_count = SESSION_SIZE - len(ltm_words)
+    new_batch = _sample_new_cards(new_count, exercise_type, tag, user_id)
+
+    # Combine LTM + new
     session = ltm_words + new_batch
+
+    # If still short, top up with additional LTM cards (R >= R_TARGET)
+    if len(session) < SESSION_SIZE:
+        existing_ids = {w.get("word_id") for w in session if w.get("word_id")}
+        existing_lemmas = {(w.get("lemma"), w.get("pos")) for w in session}
+
+        ltm_pool = [
+            c for c in all_cards
+            if c.get("retrievability", 0) >= R_TARGET
+        ]
+        random.shuffle(ltm_pool)
+
+        for card in ltm_pool:
+            if len(session) >= SESSION_SIZE:
+                break
+            if card.get("word_id") in existing_ids:
+                continue
+            if (card.get("lemma"), card.get("pos")) in existing_lemmas:
+                continue
+
+            if "word_id" in card:
+                word = lexicon_repo.get_word_by_id(card["word_id"])
+            else:
+                word = lexicon_repo.get_word_by_lemma_pos(card["lemma"], card["pos"])
+
+            if word:
+                session.append(word)
+                if word.get("word_id"):
+                    existing_ids.add(word.get("word_id"))
+                existing_lemmas.add((word.get("lemma"), word.get("pos")))
+
     random.shuffle(session)
 
     return session

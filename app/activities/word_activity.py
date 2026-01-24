@@ -24,7 +24,7 @@ class WordActivity(AbstractActivity):
             lemma_text = f"{article} {lemma_text}"
         render_flashcard(
             main_text=lemma_text,
-            main_font_size="3.5em",
+            main_font_size="2.5em",
             bg_color="#f0f2f6"
         )
 

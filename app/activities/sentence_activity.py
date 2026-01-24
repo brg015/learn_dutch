@@ -50,7 +50,7 @@ class SentenceActivity(AbstractActivity):
         render_flashcard(
             main_text=sentence,
             corner_text=lemma_text,
-            main_font_size="2.2em",
+            main_font_size="2.0em",
             wrap_text=True,
             bg_color="#f0f2f6"
         )

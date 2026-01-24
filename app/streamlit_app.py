@@ -221,6 +221,7 @@ def render_test_mode_warning():
 
 def render_intro_screen():
     """Render intro screen with mode selection."""
+    st.markdown("<style>.stApp h1 { font-size: 1.6rem; }</style>", unsafe_allow_html=True)
     st.title("🇳🇱 Dutch Vocabulary Trainer")
     render_test_mode_warning()
     st.markdown("<br>" * 3, unsafe_allow_html=True)

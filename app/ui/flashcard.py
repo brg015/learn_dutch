@@ -57,6 +57,6 @@ def render_flashcard(
         subtitle_html = f'<p style="font-size: {subtitle_font_size}; color: {subtitle_color}; font-style: {subtitle_style}; margin: 15px 0 0 0; text-align: center; line-height: 1.4;">{subtitle}</p>'
     
     # Combine into card HTML
-    html = f'<div style="background-color: {bg_color}; padding: 60px 40px; border-radius: 15px; text-align: center; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1); min-height: 300px; display: flex; flex-direction: column; align-items: center; justify-content: center; position: relative;">{corner_html}{main_html}{subtitle_html}</div>'
+    html = f'<div style="background-color: {bg_color}; padding: 45px 30px; border-radius: 15px; text-align: center; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1); min-height: 225px; display: flex; flex-direction: column; align-items: center; justify-content: center; position: relative;">{corner_html}{main_html}{subtitle_html}</div>'
     
     st.markdown(html, unsafe_allow_html=True)

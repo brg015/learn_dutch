@@ -17,31 +17,18 @@ def render_session_stats() -> bool:
     if not st.session_state.session_batch:
         return False
     
-    col1, col2, col3, col4 = st.columns([2, 2, 2, 0.8])
+    col1, col2 = st.columns([4, 1])
 
     with col1:
         total = len(st.session_state.session_batch)
         current = st.session_state.session_position
-        st.caption("Progress")
         st.markdown(f"**{current}/{total}**")
 
     with col2:
-        st.caption("Reviewed")
-        st.markdown(f"**{st.session_state.session_count}**")
-
-    with col3:
-        st.caption("Accuracy")
-        if st.session_state.session_count > 0:
-            accuracy = st.session_state.session_correct / st.session_state.session_count * 100
-            st.markdown(f"**{accuracy:.0f}%**")
-        else:
-            st.markdown("**-**")
-
-    with col4:
         if st.button("X", help="Quit session"):
             return True
 
-    st.markdown("<hr style='margin: 0.5rem 0;'>", unsafe_allow_html=True)
+    st.markdown("<hr style='margin: 0.30rem 0;'>", unsafe_allow_html=True)
     return False
 
 
