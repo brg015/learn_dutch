@@ -173,16 +173,22 @@ def _create_subsequent_session(exercise_type: str, tag: Optional[str], user_id: 
         if word:
             session.append(word)
 
-    # 2. If not full, draw from STM pool (recent AGAIN)
+    # 2. If not full, draw from STM pool (recent AGAIN) without LTM overlap
     if len(session) < SESSION_SIZE:
         stm_pool = _get_stm_pool(exercise_type, user_id)
-        stm_count = min(len(stm_pool), SESSION_SIZE - len(session))
+        ltm_keys = {(w.get("lemma"), w.get("pos")) for w in session}
 
-        for card_info in stm_pool[:stm_count]:
+        for card_info in stm_pool:
+            if len(session) >= SESSION_SIZE:
+                break
+            # Skip if already in LTM pool
+            if (card_info["lemma"], card_info["pos"]) in ltm_keys:
+                continue
             # STM pool only has lemma/pos, look up by those
             word = lexicon_repo.get_word_by_lemma_pos(card_info["lemma"], card_info["pos"])
             if word:
                 session.append(word)
+                ltm_keys.add((card_info["lemma"], card_info["pos"]))
 
     # 3. If still not full, draw from new cards
     if len(session) < SESSION_SIZE:
