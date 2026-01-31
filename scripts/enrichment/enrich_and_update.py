@@ -203,7 +203,7 @@ def enrich_and_update_modular(
                             "word_enrichment.enriched": True,
                             "word_enrichment.enriched_at": datetime.now(timezone.utc),
                             "word_enrichment.model_used": model,
-                            "word_enrichment.version": doc.get("word_enrichment", {}).get("version", 1),
+                            "word_enrichment.version": 2,  # v2: ensures translation/definition are for lemma, not imported_word
                             "word_enrichment.approved": False,
                             "enrichment.lemma_normalized": lemma_normalized,
                         }

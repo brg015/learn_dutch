@@ -23,5 +23,6 @@ data/
 # Calude
 .claude/
 
-# Simple setup scripts
+# Simple setup scripts and personal notes
 run_apps*
+editor_notes.md

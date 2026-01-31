@@ -12,7 +12,7 @@ import sys
 import json
 
 from scripts.enrichment.enrich_modular import enrich_basic, enrich_pos
-from core.schemas import PartOfSpeech, AIEnrichedEntry
+from core.schemas import PartOfSpeech
 
 
 def main():
@@ -40,9 +40,7 @@ def main():
         print()
 
         # Phase 2: POS-specific enrichment (if applicable)
-        noun_meta = None
-        verb_meta = None
-        adjective_meta = None
+        pos_metadata = None
 
         if basic_enriched.pos in [PartOfSpeech.NOUN, PartOfSpeech.VERB, PartOfSpeech.ADJECTIVE]:
             print(f"PHASE 2: {basic_enriched.pos} enrichment...")
@@ -53,87 +51,71 @@ def main():
             print()
             print(f"✓ Phase 2 complete")
             print()
-
-            # Assign to correct field
-            if basic_enriched.pos == PartOfSpeech.NOUN:
-                noun_meta = pos_metadata
-            elif basic_enriched.pos == PartOfSpeech.VERB:
-                verb_meta = pos_metadata
-            elif basic_enriched.pos == PartOfSpeech.ADJECTIVE:
-                adjective_meta = pos_metadata
         else:
             print(f"→ Phase 2 skipped (POS '{basic_enriched.pos}' doesn't need it)")
             print()
 
-        # Combine into full AIEnrichedEntry format
-        result = AIEnrichedEntry(
-            lemma=basic_enriched.lemma,
-            pos=basic_enriched.pos,
-            sense=basic_enriched.sense,
-            translation=basic_enriched.translation,
-            definition=basic_enriched.definition,
-            difficulty=basic_enriched.difficulty,
-            tags=basic_enriched.tags,
-            general_examples=basic_enriched.general_examples,
-            noun_meta=noun_meta,
-            verb_meta=verb_meta,
-            adjective_meta=adjective_meta,
-        )
-
-        # Print full JSON output
-        print("FULL AI RESPONSE:")
-        print("=" * 80)
-        print(json.dumps(result.model_dump(), indent=2, ensure_ascii=False))
-        print("=" * 80)
-        print()
-
         # Highlight specific fields
-        print("KEY FIELDS:")
+        print("KEY FIELDS (Phase 1):")
         print("-" * 80)
-        print(f"Lemma:       {result.lemma}")
-        print(f"POS:         {result.pos}")
-        print(f"Translation: {result.translation}")
-        print(f"Difficulty:  {result.difficulty}")
-        print(f"Tags:        {result.tags}")
+        print(f"Lemma:       {basic_enriched.lemma}")
+        print(f"POS:         {basic_enriched.pos}")
+        print(f"Translation: {basic_enriched.translation}")
+        print(f"Definition:  {basic_enriched.definition}")
+        print(f"Difficulty:  {basic_enriched.difficulty}")
+        print(f"Tags:        {basic_enriched.tags}")
+        print(f"Examples:    {len(basic_enriched.general_examples)}")
         print()
 
         # Check for POS-specific metadata
-        if result.pos == "adjective" and result.adjective_meta:
-            print("ADJECTIVE METADATA:")
-            print("-" * 80)
-            print(f"Comparative: {result.adjective_meta.comparative}")
-            print(f"Superlative: {result.adjective_meta.superlative}")
-            if result.adjective_meta.fixed_prepositions:
-                print(f"Fixed Prepositions: {len(result.adjective_meta.fixed_prepositions)}")
-                for prep in result.adjective_meta.fixed_prepositions:
-                    print(f"  - {prep.preposition} ({prep.usage_frequency})")
-            print(f"Examples:    {len(result.adjective_meta.examples_base)} base, "
-                  f"{len(result.adjective_meta.examples_comparative)} comparative, "
-                  f"{len(result.adjective_meta.examples_superlative)} superlative")
-        elif result.pos == "verb" and result.verb_meta:
-            print("VERB METADATA:")
-            print("-" * 80)
-            print(f"Past Singular:  {result.verb_meta.past_singular}")
-            print(f"Past Plural:    {result.verb_meta.past_plural}")
-            print(f"Participle:     {result.verb_meta.past_participle}")
-            print(f"Auxiliary:      {result.verb_meta.auxiliary}")
-            print(f"Reflexive:      {result.verb_meta.is_reflexive}")
-            print(f"Irregular Past: {result.verb_meta.is_irregular_past}")
-            print(f"Irregular Part: {result.verb_meta.is_irregular_participle}")
-            if result.verb_meta.preposition_usage:
-                print(f"Prepositional Uses: {len(result.verb_meta.preposition_usage)}")
-                for prep_use in result.verb_meta.preposition_usage:
-                    print(f"  - {prep_use.preposition}: {prep_use.meaning}")
-        elif result.pos == "noun" and result.noun_meta:
-            print("NOUN METADATA:")
-            print("-" * 80)
-            print(f"Article:     {result.noun_meta.article}")
-            print(f"Plural:      {result.noun_meta.plural}")
-            print(f"Diminutive:  {result.noun_meta.diminutive}")
-            if result.noun_meta.fixed_prepositions:
-                print(f"Fixed Prepositions: {len(result.noun_meta.fixed_prepositions)}")
-                for prep in result.noun_meta.fixed_prepositions:
-                    print(f"  - {prep.preposition} ({prep.usage_frequency})")
+        if pos_metadata:
+            if basic_enriched.pos == PartOfSpeech.ADJECTIVE:
+                print("ADJECTIVE METADATA (Phase 2):")
+                print("-" * 80)
+                adj_meta = pos_metadata.adjective_meta
+                print(f"Comparative: {adj_meta.comparative}")
+                print(f"Superlative: {adj_meta.superlative}")
+                print(f"Irregular Comparative: {adj_meta.is_irregular_comparative}")
+                print(f"Irregular Superlative: {adj_meta.is_irregular_superlative}")
+                if adj_meta.fixed_prepositions:
+                    print(f"Fixed Prepositions: {len(adj_meta.fixed_prepositions)}")
+                    for prep in adj_meta.fixed_prepositions:
+                        print(f"  - {prep.preposition} ({prep.usage_frequency}): {prep.meaning_context or 'N/A'}")
+                print(f"Examples:    {len(adj_meta.examples_base)} base, "
+                      f"{len(adj_meta.examples_comparative)} comparative, "
+                      f"{len(adj_meta.examples_superlative)} superlative")
+            elif basic_enriched.pos == PartOfSpeech.VERB:
+                print("VERB METADATA (Phase 2):")
+                print("-" * 80)
+                verb_meta = pos_metadata.verb_meta
+                print(f"Past Singular:  {verb_meta.past_singular}")
+                print(f"Past Plural:    {verb_meta.past_plural}")
+                print(f"Participle:     {verb_meta.past_participle}")
+                print(f"Auxiliary:      {verb_meta.auxiliary}")
+                print(f"Separable:      {verb_meta.separable}")
+                if verb_meta.separable:
+                    print(f"Prefix:         {verb_meta.separable_prefix}")
+                print(f"Reflexive:      {verb_meta.is_reflexive}")
+                print(f"Irregular Past: {verb_meta.is_irregular_past}")
+                print(f"Irregular Part: {verb_meta.is_irregular_participle}")
+                if verb_meta.preposition_usage:
+                    print(f"Prepositional Uses: {len(verb_meta.preposition_usage)}")
+                    for prep_use in verb_meta.preposition_usage:
+                        print(f"  - {prep_use.preposition}: {prep_use.meaning}")
+                        print(f"    Examples: {len(prep_use.examples)}")
+            elif basic_enriched.pos == PartOfSpeech.NOUN:
+                print("NOUN METADATA (Phase 2):")
+                print("-" * 80)
+                noun_meta = pos_metadata.noun_meta
+                print(f"Article:     {noun_meta.article}")
+                print(f"Plural:      {noun_meta.plural}")
+                print(f"Diminutive:  {noun_meta.diminutive}")
+                if noun_meta.fixed_prepositions:
+                    print(f"Fixed Prepositions: {len(noun_meta.fixed_prepositions)}")
+                    for prep in noun_meta.fixed_prepositions:
+                        print(f"  - {prep.preposition} ({prep.usage_frequency}): {prep.meaning_context or 'N/A'}")
+                print(f"Examples:    {len(noun_meta.examples_singular)} singular, "
+                      f"{len(noun_meta.examples_plural)} plural")
 
         print()
         print("✓ Enrichment test complete")

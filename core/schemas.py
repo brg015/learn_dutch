@@ -72,13 +72,6 @@ class BilingualExample(BaseModel):
     dutch: str = Field(..., description="Dutch sentence")
     english: str = Field(..., description="English translation")
 
-
-class PrepositionExamples(BaseModel):
-    """DEPRECATED: Use VerbPrepositionUsage instead. Examples for a specific preposition."""
-    preposition: str = Field(..., description="The preposition (e.g., 'met', 'over', 'aan')")
-    examples: list[BilingualExample] = Field(default_factory=list, max_length=MAX_EXAMPLES_PER_FORM, description="Example sentences using this preposition")
-
-
 class FixedPreposition(BaseModel):
     """
     Fixed preposition for adjectives/nouns - conventional collocations.
@@ -206,11 +199,17 @@ class ImportData(BaseModel):
 # ---- AI Enrichment Metadata ----
 
 class WordEnrichment(BaseModel):
-    """Phase 1 enrichment metadata - basic word info (lemma, POS, translation, etc.)."""
+    """
+    Phase 1 enrichment metadata - basic word info (lemma, POS, translation, etc.).
+
+    Version History:
+    - v1: Initial implementation
+    - v2: Translation/definition guaranteed to be for lemma (not imported_word)
+    """
     enriched: bool = False
     enriched_at: Optional[datetime] = None
     model_used: Optional[str] = None  # e.g., "gpt-4o-2024-08-06"
-    version: int = 1  # increment if re-enriched
+    version: int = 1  # version of enrichment prompt used (default: 1, set to 2 for new enrichments)
     lemma_normalized: bool = False  # did AI correct the lemma from imported_word?
     approved: bool = False  # manual approval of Phase 1 data
 
@@ -287,45 +286,24 @@ class LexiconEntry(BaseModel):
 
 # ---- AI Enrichment Response Models ----
 
-class AIEnrichedEntry(BaseModel):
-    """
-    Structured output from AI enrichment (monolithic approach).
-
-    This is what the LLM returns when enriching a word in a single call.
-    You can then merge this into a LexiconEntry.
-    """
-    lemma: str
-    pos: PartOfSpeech
-    sense: Optional[str] = Field(default=None, description="Sense disambiguator for homonyms (usually None)")
-    translation: str = Field(..., description="The single best, most common English translation")
-    definition: str = Field(..., description="Clear explanation with context and nuance (N sentences)")
-    difficulty: CEFRLevel = CEFRLevel.UNKNOWN
-    tags: list[str] = Field(default_factory=list, max_length=5, description="Max 5 semantic tags")
-
-    # POS-specific (AI fills these based on pos)
-    noun_meta: Optional[NounMetadata] = None
-    verb_meta: Optional[VerbMetadata] = None
-    adjective_meta: Optional[AdjectiveMetadata] = None
-
-    # For other POS types (or fallback)
-    general_examples: list[BilingualExample] = Field(default_factory=list, max_length=MAX_EXAMPLES_PER_FORM, description="general examples for words without specific POS metadata")
-
-    class Config:
-        use_enum_values = True
-
-
 class AIBasicEnrichment(BaseModel):
     """
     Phase 1 enrichment: Basic word information (modular approach).
 
     Returns lemma, POS, translation, definition, difficulty, tags, and general examples.
     Does NOT include POS-specific metadata (conjugations, declensions, etc.).
+
+    Version History:
+    - v1: Initial implementation
+    - v2: Ensures translation and definition are based on the normalized lemma,
+          not the imported_word. The AI should always provide translation/definition
+          for the lemma form, even if the imported_word was inflected (e.g., "liep" -> "lopen").
     """
     lemma: str
     pos: PartOfSpeech
     sense: Optional[str] = Field(default=None, description="Sense disambiguator for homonyms (usually None)")
-    translation: str = Field(..., description="The single best, most common English translation")
-    definition: str = Field(..., description="Clear explanation with context and nuance (1-2 sentences)")
+    translation: str = Field(..., description="The single best, most common English translation FOR THE LEMMA")
+    definition: str = Field(..., description="Clear explanation with context and nuance (1-2 sentences) FOR THE LEMMA")
     difficulty: CEFRLevel = CEFRLevel.UNKNOWN
     tags: list[str] = Field(default_factory=list, max_length=5, description="Max 5 semantic tags")
     general_examples: list[BilingualExample] = Field(default_factory=list, max_length=MAX_EXAMPLES_PER_FORM, description="General examples")

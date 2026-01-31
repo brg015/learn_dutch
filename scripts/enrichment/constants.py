@@ -22,13 +22,20 @@ SYSTEM_PROMPT_ADJECTIVE = "You are a Dutch linguistics expert specializing in ad
 
 UNIVERSAL_INSTRUCTIONS = """Provide comprehensive linguistic metadata.
 
+CRITICAL: The user may provide an inflected or conjugated form of the word (e.g., "liep", "mooier").
+You MUST:
+1. Identify the correct LEMMA (dictionary form: "lopen", "mooi")
+2. Provide translation and definition FOR THE LEMMA, not the inflected form
+   - Example: If user provides "liep", translate "lopen" as "to walk" (NOT "walked")
+   - Example: If user provides "mooier", translate "mooi" as "beautiful" (NOT "more beautiful")
+
 Instructions:
 - Identify the correct part of speech (POS)
-- Provide the SINGLE BEST, most common English translation (one clear answer for flashcards)
+- Provide the SINGLE BEST, most common English translation FOR THE LEMMA (one clear answer for flashcards)
   * Choose the most natural, frequently used translation
   * Keep it concise - a single word or short phrase
   * Examples: "to walk" (not "to walk, to go"), "cozy" (not "cozy, nice, pleasant")
-- Provide a clear definition (1-2 sentences) explaining meaning with context and nuance
+- Provide a clear definition FOR THE LEMMA (1-2 sentences) explaining meaning with context and nuance
   * Mention alternative translations if they're common (e.g., "can also mean 'nice' or 'pleasant'")
   * Explain WHEN and WHY to use this word
   * For uniquely Dutch concepts (like "gezellig"), provide cultural context
