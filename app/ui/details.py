@@ -255,7 +255,7 @@ def _render_grammar(word: dict):
             st.markdown(f"**Past Participle:** {verb_meta['past_participle']}")
         if verb_meta.get('auxiliary'):
             st.markdown(f"**Auxiliary:** {verb_meta['auxiliary']}")
-        if verb_meta.get('is_separable'):
+        if verb_meta.get('separable'):
             st.markdown(f"**Separable:** Yes")
             if verb_meta.get('separable_prefix'):
                 st.markdown(f"**Prefix:** {verb_meta['separable_prefix']}")
