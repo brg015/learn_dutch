@@ -8,7 +8,7 @@ import streamlit as st
 from core import fsrs
 
 
-def render_feedback_buttons() -> fsrs.FeedbackGrade:
+def render_feedback_buttons(key_suffix: str = "") -> fsrs.FeedbackGrade:
     """
     Render feedback grading buttons.
     
@@ -53,7 +53,7 @@ def render_feedback_buttons() -> fsrs.FeedbackGrade:
         "Answer",
         ["❌ Again", "😰 Hard", "👍 Medium", "✨ Easy"],
         index=None,
-        key="answer_choice",
+        key=f"answer_choice_{key_suffix}",
         label_visibility="collapsed"
     )
 

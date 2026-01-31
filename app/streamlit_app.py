@@ -9,7 +9,8 @@ import uuid
 from datetime import datetime, timezone
 
 from core import session_builder, fsrs
-from app.activities import WordActivity, SentenceActivity
+from core import verb_session_builder
+from app.activities import WordActivity, SentenceActivity, VerbTenseActivity
 from app.ui import (
     render_session_stats,
     render_session_complete,
@@ -81,6 +82,10 @@ def _init_session_state():
         st.session_state.review_events_buffer = []
     if "cards_buffer" not in st.session_state:
         st.session_state.cards_buffer = []
+    if "current_exercise_type" not in st.session_state:
+        st.session_state.current_exercise_type = "word_translation"
+    if "current_tense_step" not in st.session_state:
+        st.session_state.current_tense_step = None
 
 
 _init_session_state()
@@ -91,15 +96,44 @@ _init_session_state()
 def start_new_session(mode: str):
     """
     Start a new learning session.
-    
+
     Args:
-        mode: Learning mode ("words" or "sentences")
+        mode: Learning mode ("words", "sentences", or "verb_tenses")
     """
-    batch = session_builder.create_session(
-        exercise_type='word_translation',
-        tag=None,
-        user_id=st.session_state.user_id
-    )
+    if mode == "verb_tenses":
+        # Create verb tense session (returns triplets)
+        try:
+            print("[STREAMLIT] Starting verb session creation...")
+            with st.spinner("Creating verb session..."):
+                triplets, message = verb_session_builder.create_verb_tense_session(
+                    user_id=st.session_state.user_id,
+                    r_threshold=fsrs.R_TARGET,
+                    filter_known=True
+                )
+            print(f"[STREAMLIT] Session creation complete. Got {len(triplets)} triplets")
+
+            if not triplets:
+                st.error(message)
+                return  # Don't create session, but allow rerun
+        except Exception as e:
+            st.error(f"Error creating verb session: {e}")
+            import traceback
+            st.code(traceback.format_exc())
+            return  # Don't create session, but allow rerun
+
+        # Flatten triplets into sequential exercises
+        # Each triplet: (word_dict, "perfectum", "past_tense")
+        batch = []
+        for word, _, _ in triplets:
+            batch.append((word, "perfectum"))
+            batch.append((word, "past_tense"))
+    else:
+        # Word translation session (words or sentences mode)
+        batch = session_builder.create_session(
+            exercise_type='word_translation',
+            tag=None,
+            user_id=st.session_state.user_id
+        )
 
     st.session_state.session_id = str(uuid.uuid4())
     st.session_state.session_batch = batch
@@ -122,29 +156,45 @@ def load_next_word():
         st.session_state.activity = None
         return
 
-    word = st.session_state.session_batch[st.session_state.session_position]
+    # Handle different batch formats based on mode
+    if st.session_state.learning_mode == "verb_tenses":
+        # Batch contains tuples: (word_dict, tense_step)
+        word, tense_step = st.session_state.session_batch[st.session_state.session_position]
+        st.session_state.current_tense_step = tense_step
+        st.session_state.current_exercise_type = f"verb_{tense_step}"
+    else:
+        # Batch contains word dicts
+        word = st.session_state.session_batch[st.session_state.session_position]
+        st.session_state.current_exercise_type = "word_translation"
+        st.session_state.current_tense_step = None
+
     st.session_state.current_word = word
     st.session_state.show_answer = False
     st.session_state.start_time = datetime.now(timezone.utc)
     if "answer_choice" in st.session_state:
         st.session_state.pop("answer_choice", None)
+    if st.session_state.learning_mode == "verb_tenses":
+        st.session_state.show_answer = st.session_state.current_tense_step == "past_tense"
 
     # Create activity based on mode
     if st.session_state.learning_mode == "words":
         st.session_state.activity = WordActivity(word)
     elif st.session_state.learning_mode == "sentences":
         st.session_state.activity = SentenceActivity(word)
+    elif st.session_state.learning_mode == "verb_tenses":
+        st.session_state.activity = VerbTenseActivity(word, st.session_state.current_tense_step)
 
 
 def process_feedback(feedback_grade: fsrs.FeedbackGrade):
     """
     Process user feedback and move to next word.
-    
+
     Args:
         feedback_grade: User's grade feedback
     """
     if st.session_state.current_word:
         word = st.session_state.current_word
+        exercise_type = st.session_state.current_exercise_type
 
         # Calculate latency
         latency_ms = None
@@ -152,13 +202,13 @@ def process_feedback(feedback_grade: fsrs.FeedbackGrade):
             elapsed = datetime.now(timezone.utc) - st.session_state.start_time
             latency_ms = int(elapsed.total_seconds() * 1000)
 
-        # Load or initialize card state
-        card = fsrs.load_card_state(st.session_state.user_id, word["word_id"], "word_translation")
+        # Load or initialize card state (use current exercise_type)
+        card = fsrs.load_card_state(st.session_state.user_id, word["word_id"], exercise_type)
         if card is None:
             card = fsrs.CardState(
                 user_id=st.session_state.user_id,
                 word_id=word["word_id"],
-                exercise_type="word_translation",
+                exercise_type=exercise_type,
                 lemma=word["lemma"],
                 pos=word["pos"],
                 stability=4.0,
@@ -177,7 +227,7 @@ def process_feedback(feedback_grade: fsrs.FeedbackGrade):
         event_data['latency_ms'] = latency_ms
         event_data['session_id'] = st.session_state.session_id
         event_data['session_position'] = st.session_state.session_position
-        event_data['presentation_mode'] = st.session_state.learning_mode
+        event_data['presentation_mode'] = st.session_state.activity.get_presentation_mode()
 
         # Buffer for batch write
         st.session_state.cards_buffer.append(updated_card)
@@ -258,6 +308,13 @@ def render_intro_screen():
             start_new_session("sentences")
             st.rerun()
 
+    st.markdown("### 🔄 Verb Conjugation")
+    st.markdown("Practice verb tenses (perfectum and past tense):")
+
+    if st.button("Verb Tenses", type="secondary", use_container_width=True, help="Practice verb conjugations"):
+        start_new_session("verb_tenses")
+        st.rerun()
+
 
 def render_active_session():
     """Render active learning session."""
@@ -279,7 +336,8 @@ def render_active_session():
         st.markdown("<br>", unsafe_allow_html=True)
 
         # Feedback buttons
-        feedback = render_feedback_buttons()
+        key_suffix = f"{st.session_state.learning_mode}_{st.session_state.session_position}"
+        feedback = render_feedback_buttons(key_suffix=key_suffix)
         if feedback is not None:
             process_feedback(feedback)
             # Don't rerun here - Streamlit naturally reruns from button click

@@ -53,3 +53,15 @@ U_RATING = {
     FeedbackGrade.MEDIUM: -0.20, # Medium success slightly decreases difficulty
     FeedbackGrade.EASY: -0.60,   # Easy success significantly decreases difficulty
 }
+
+
+# ---- Verb Tense Activity Configuration ----
+
+# Verb filtering threshold (for verb tense activity)
+# Only practice verbs where base meaning recall >= this threshold
+VERB_FILTER_THRESHOLD = 0.0  # Start with 0% (all verbs)
+# TODO: Increase to 0.70 after initial testing
+
+# Verb session size (number of verbs per session)
+# Each verb has 2 exercises (perfectum + past tense), so total = 2 × VERB_SESSION_SIZE
+VERB_SESSION_SIZE = 10  # Default: 10 verbs = 20 total exercises (reduced for testing)
