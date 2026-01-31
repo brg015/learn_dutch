@@ -22,3 +22,6 @@ data/
 
 # Calude
 .claude/
+
+# Simple setup scripts
+run_apps*
