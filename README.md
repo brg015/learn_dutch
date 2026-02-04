@@ -1,3 +1,15 @@
+# ---
+# title: Dutch Vocab Trainer
+# emoji: 📚
+# colorFrom: blue
+# colorTo: green
+# sdk: streamlit
+# sdk_version: "1.32.0"
+# python_version: "3.11"
+# app_file: app/streamlit_app.py
+# pinned: false
+# ---
+
 # Dutch Vocabulary Trainer
 
 A vocabulary learning application for Dutch that combines **AI-powered lexicon enrichment** with **cognitive psychology-based spaced repetition** (FSRS) to maximize long-term retention.
