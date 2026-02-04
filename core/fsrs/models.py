@@ -5,8 +5,6 @@ Defines CardState and ReviewEvent models for Postgres persistence.
 Maps to the previously SQLite-based schema.
 """
 
-from datetime import datetime, timezone
-from typing import Optional
 from sqlalchemy import Column, String, Integer, Float, Text, ForeignKey, DateTime, Boolean
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import relationship
@@ -38,8 +36,8 @@ class CardState(Base):
 
     # Review tracking
     review_count = Column(Integer, nullable=False)
-    last_review_timestamp = Column(String(255), nullable=False)  # ISO format datetime
-    last_ltm_timestamp = Column(String(255), nullable=True)
+    last_review_timestamp = Column(DateTime(timezone=True), nullable=False)
+    last_ltm_timestamp = Column(DateTime(timezone=True), nullable=True)
     ltm_review_date = Column(String(255), nullable=True)
 
     # Short-term memory tracking (reset after LTM)
@@ -73,7 +71,7 @@ class ReviewEvent(Base):
     pos = Column(String(50), nullable=False)
 
     # Timing and feedback
-    timestamp = Column(String(255), nullable=False)  # ISO format datetime
+    timestamp = Column(DateTime(timezone=True), nullable=False)
     feedback_grade = Column(Integer, nullable=False)  # 1=AGAIN, 2=HARD, 3=MEDIUM, 4=EASY
     latency_ms = Column(Integer, nullable=True)  # Time taken to answer
 

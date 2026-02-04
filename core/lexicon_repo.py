@@ -7,14 +7,12 @@ Provides functions to query and retrieve words from the lexicon.
 from __future__ import annotations
 
 import os
-import uuid
 from typing import Optional
 
 from dotenv import load_dotenv
 from pymongo import MongoClient
 from pymongo.collection import Collection
 
-from core.schemas import LexiconEntry
 
 # Load environment
 load_dotenv()
@@ -22,7 +20,7 @@ load_dotenv()
 # Configuration
 DB_NAME = "dutch_trainer"
 COLLECTION_NAME = "lexicon"
-ONLY_ENRICHED = True # If True, only use enriched words
+ONLY_ENRICHED = True # If True, enriched_only is always enforced
 
 # Global connection pool (reused across requests)
 _client: Optional[MongoClient] = None
@@ -91,6 +89,9 @@ def get_all_words(
         tag: If provided, filter by this tag (checks both user_tags and tags)
         pos: Optional part of speech filter (e.g., "verb")
         require_verb_meta: If True, only include verbs with verb_meta populated
+    
+    Notes:
+        If ONLY_ENRICHED is True, enriched_only is forced regardless of input.
 
     Returns:
         List of lexicon entry dictionaries
@@ -123,147 +124,6 @@ def get_enriched_verbs() -> list[dict]:
     Get all verbs with Phase 2 enrichment (verb_meta populated).
     """
     return get_all_words(pos="verb", require_verb_meta=True)
-
-
-def get_random_word(
-    enriched_only: bool = True,
-    tag: Optional[str] = None,
-    exclude_lemmas: Optional[set[tuple[str, str]]] = None
-) -> Optional[dict]:
-    """
-    Get a random word from the lexicon.
-
-    Args:
-        enriched_only: If True, only select from enriched words
-        tag: If provided, filter by this tag (checks both user_tags and tags)
-        exclude_lemmas: Optional set of (lemma, pos) tuples to exclude
-
-    Returns:
-        Random lexicon entry dictionary, or None if no words match
-    """
-    collection = get_collection()
-
-    # Build query
-    query = {}
-
-    if _should_filter_enriched(enriched_only):
-        query["word_enrichment.enriched"] = True
-
-    if tag:
-        # Match tag in either user_tags OR AI-generated tags
-        query["$or"] = [
-            {"user_tags": tag},
-            {"tags": tag}
-        ]
-
-    if exclude_lemmas:
-        # Exclude specific lemma+pos combinations
-        exclude_conditions = [
-            {"lemma": lemma, "pos": pos}
-            for lemma, pos in exclude_lemmas
-        ]
-        if exclude_conditions:
-            query["$nor"] = exclude_conditions
-
-    # Use MongoDB's $sample aggregation for random selection
-    pipeline = [
-        {"$match": query},
-        {"$sample": {"size": 1}}
-    ]
-
-    results = list(collection.aggregate(pipeline))
-
-    if results:
-        return results[0]
-    return None
-
-
-def get_words_by_tag(tag: str, enriched_only: bool = True) -> list[dict]:
-    """
-    Get all words with a specific tag.
-
-    Args:
-        tag: The tag to filter by (checks both user_tags and tags)
-        enriched_only: If True, only return enriched words
-
-    Returns:
-        List of lexicon entry dictionaries
-    """
-    collection = get_collection()
-
-    query = {
-        "$or": [
-            {"user_tags": tag},
-            {"tags": tag}
-        ]
-    }
-
-    if _should_filter_enriched(enriched_only):
-        query["word_enrichment.enriched"] = True
-
-    return list(collection.find(query))
-
-
-def count_words(enriched_only: bool = False) -> int:
-    """
-    Count total words in the lexicon.
-
-    Args:
-        enriched_only: If True, only count enriched words
-
-    Returns:
-        Total number of words
-    """
-    collection = get_collection()
-
-    query = {}
-    if _should_filter_enriched(enriched_only):
-        query["word_enrichment.enriched"] = True
-
-    return collection.count_documents(query)
-
-
-def get_all_tags() -> list[str]:
-    """
-    Get all unique tags (both user_tags and AI-generated tags) in the lexicon.
-
-    Returns the union of both tag types.
-
-    Useful for UI filters.
-
-    Returns:
-        Sorted list of unique tags
-    """
-    collection = get_collection()
-
-    # Get all user_tags
-    user_tags_pipeline = [
-        {"$unwind": "$user_tags"},
-        {"$group": {"_id": "$user_tags"}}
-    ]
-
-    # Get all AI-generated tags
-    ai_tags_pipeline = [
-        {"$unwind": "$tags"},
-        {"$group": {"_id": "$tags"}}
-    ]
-
-    user_tags = {doc["_id"] for doc in collection.aggregate(user_tags_pipeline)}
-    ai_tags = {doc["_id"] for doc in collection.aggregate(ai_tags_pipeline)}
-
-    # Return sorted union
-    all_tags = user_tags | ai_tags
-    return sorted(all_tags)
-
-
-def generate_word_id() -> str:
-    """
-    Generate a unique word ID (UUID).
-
-    Returns:
-        UUID string
-    """
-    return str(uuid.uuid4())
 
 
 def get_word_by_id(word_id: str) -> Optional[dict]:

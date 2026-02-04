@@ -34,7 +34,7 @@ def build_stm_set(user_id: str, exercise_type: str) -> Set[StmKey]:
         ).filter(
             ReviewEventModel.user_id == user_id,
             ReviewEventModel.exercise_type == exercise_type,
-            ReviewEventModel.timestamp >= yesterday_start.isoformat(),
+            ReviewEventModel.timestamp >= yesterday_start,
             ReviewEventModel.feedback_grade == int(FeedbackGrade.AGAIN),
         ).all()
 

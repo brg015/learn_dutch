@@ -30,31 +30,6 @@ def fill_in_order(
     return session
 
 
-def fill_with_ratios(
-    pools: dict[str, list[T]],
-    ratios: dict[str, float],
-    target_size: int,
-    fallback_order: list[str]
-) -> list[T]:
-    """
-    Fill a session using target ratios, then top up via fallback_order.
-    """
-    session: list[T] = []
-    for name, ratio in ratios.items():
-        if ratio <= 0:
-            continue
-        target = int(target_size * ratio)
-        items = pools.get(name, [])
-        session.extend(items[:target])
-
-    if len(session) < target_size:
-        remaining = target_size - len(session)
-        top_up = fill_in_order(pools, fallback_order, remaining)
-        session.extend(top_up)
-
-    return session
-
-
 def due_cards_from_snapshot(
     all_cards: list,
     r_threshold: float

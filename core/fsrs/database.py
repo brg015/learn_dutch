@@ -10,7 +10,7 @@ Algorithm logic is handled by the scheduler module.
 
 from __future__ import annotations
 import os
-from datetime import datetime, timezone
+from datetime import datetime
 from typing import Optional
 from sqlalchemy import create_engine, inspect
 from sqlalchemy.orm import sessionmaker, Session
@@ -164,14 +164,6 @@ def load_card_state(
         if db_card is None:
             return None
         
-        # Parse timestamps
-        last_review_ts = datetime.fromisoformat(db_card.last_review_timestamp)
-        last_ltm_ts = (
-            datetime.fromisoformat(db_card.last_ltm_timestamp)
-            if db_card.last_ltm_timestamp
-            else None
-        )
-        
         return CardState(
             user_id=db_card.user_id,
             word_id=db_card.word_id,
@@ -182,8 +174,8 @@ def load_card_state(
             difficulty=db_card.difficulty,
             d_eff=db_card.d_eff,
             review_count=db_card.review_count,
-            last_review_timestamp=last_review_ts,
-            last_ltm_timestamp=last_ltm_ts,
+            last_review_timestamp=db_card.last_review_timestamp,
+            last_ltm_timestamp=db_card.last_ltm_timestamp,
             ltm_review_date=db_card.ltm_review_date,
             stm_success_count_today=db_card.stm_success_count_today
         )
@@ -219,8 +211,8 @@ def save_card_state(card: CardState):
                 difficulty=card.difficulty,
                 d_eff=card.d_eff,
                 review_count=card.review_count,
-                last_review_timestamp=card.last_review_timestamp.isoformat(),
-                last_ltm_timestamp=card.last_ltm_timestamp.isoformat() if card.last_ltm_timestamp else None,
+                last_review_timestamp=card.last_review_timestamp,
+                last_ltm_timestamp=card.last_ltm_timestamp,
                 ltm_review_date=card.ltm_review_date,
                 stm_success_count_today=card.stm_success_count_today
             )
@@ -233,8 +225,8 @@ def save_card_state(card: CardState):
             db_card.difficulty = card.difficulty
             db_card.d_eff = card.d_eff
             db_card.review_count = card.review_count
-            db_card.last_review_timestamp = card.last_review_timestamp.isoformat()
-            db_card.last_ltm_timestamp = card.last_ltm_timestamp.isoformat() if card.last_ltm_timestamp else None
+            db_card.last_review_timestamp = card.last_review_timestamp
+            db_card.last_ltm_timestamp = card.last_ltm_timestamp
             db_card.ltm_review_date = card.ltm_review_date
             db_card.stm_success_count_today = card.stm_success_count_today
         
@@ -275,8 +267,8 @@ def batch_save_card_states(cards: list[CardState]):
                     difficulty=card.difficulty,
                     d_eff=card.d_eff,
                     review_count=card.review_count,
-                    last_review_timestamp=card.last_review_timestamp.isoformat(),
-                    last_ltm_timestamp=card.last_ltm_timestamp.isoformat() if card.last_ltm_timestamp else None,
+                    last_review_timestamp=card.last_review_timestamp,
+                    last_ltm_timestamp=card.last_ltm_timestamp,
                     ltm_review_date=card.ltm_review_date,
                     stm_success_count_today=card.stm_success_count_today
                 )
@@ -289,8 +281,8 @@ def batch_save_card_states(cards: list[CardState]):
                 db_card.difficulty = card.difficulty
                 db_card.d_eff = card.d_eff
                 db_card.review_count = card.review_count
-                db_card.last_review_timestamp = card.last_review_timestamp.isoformat()
-                db_card.last_ltm_timestamp = card.last_ltm_timestamp.isoformat() if card.last_ltm_timestamp else None
+                db_card.last_review_timestamp = card.last_review_timestamp
+                db_card.last_ltm_timestamp = card.last_ltm_timestamp
                 db_card.ltm_review_date = card.ltm_review_date
                 db_card.stm_success_count_today = card.stm_success_count_today
         
@@ -322,7 +314,7 @@ def batch_log_review_events(events: list[dict]):
                 exercise_type=event['exercise_type'],
                 lemma=event['lemma'],
                 pos=event['pos'],
-                timestamp=event['timestamp'].isoformat() if isinstance(event['timestamp'], datetime) else event['timestamp'],
+                timestamp=event['timestamp'] if isinstance(event['timestamp'], datetime) else datetime.fromisoformat(event['timestamp']),
                 feedback_grade=int(event['feedback_grade']),
                 latency_ms=event.get('latency_ms'),
                 stability_before=event.get('stability_before'),
@@ -369,13 +361,7 @@ def get_all_cards_with_state(exercise_type: str, user_id: str) -> list[CardState
         
         result: list[CardStateSnapshot] = []
         for db_card in db_cards:
-            last_ltm_ts = (
-                datetime.fromisoformat(db_card.last_ltm_timestamp)
-                if db_card.last_ltm_timestamp
-                else None
-            )
-            
-            days_since = get_days_since_ltm_review(last_ltm_ts)
+            days_since = get_days_since_ltm_review(db_card.last_ltm_timestamp)
             retrievability = calculate_retrievability(db_card.stability, days_since)
             
             result.append(
