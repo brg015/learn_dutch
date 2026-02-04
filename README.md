@@ -1,14 +1,14 @@
-# ---
-# title: Dutch Vocab Trainer
-# emoji: 📚
-# colorFrom: blue
-# colorTo: green
-# sdk: streamlit
-# sdk_version: "1.32.0"
-# python_version: "3.11"
-# app_file: app/streamlit_app.py
-# pinned: false
-# ---
+---
+title: Dutch Vocab Trainer
+emoji: 📚
+colorFrom: blue
+colorTo: green
+sdk: streamlit
+sdk_version: "1.32.0"
+python_version: "3.11"
+app_file: app/streamlit_app.py
+pinned: false
+---
 
 # Dutch Vocabulary Trainer
 
