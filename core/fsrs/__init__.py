@@ -35,7 +35,6 @@ from core.fsrs.database import (
     save_card_state,
     batch_save_card_states,
     batch_log_review_events,
-    get_card_state,
     get_due_cards,
     get_all_cards_with_state,
     get_recent_events
@@ -59,6 +58,7 @@ from core.fsrs.constants import (
 # Memory state (for advanced usage)
 from core.fsrs.memory_state import (
     CardState,
+    CardStateSnapshot,
     calculate_retrievability,
     get_days_since_ltm_review,
     is_ltm_event
@@ -78,7 +78,6 @@ __all__ = [
     "save_card_state",
     "batch_save_card_states",
     "batch_log_review_events",
-    "get_card_state",
     "get_due_cards",
     "get_all_cards_with_state",
     "get_recent_events",
@@ -88,6 +87,7 @@ __all__ = [
 
     # Memory state
     "CardState",
+    "CardStateSnapshot",
     "calculate_retrievability",
     "get_days_since_ltm_review",
     "is_ltm_event",

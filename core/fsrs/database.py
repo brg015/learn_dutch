@@ -17,7 +17,7 @@ from sqlalchemy.orm import sessionmaker, Session
 from sqlalchemy.pool import QueuePool
 
 from core.fsrs.models import Base, CardState as CardStateModel, ReviewEvent as ReviewEventModel
-from core.fsrs.memory_state import CardState
+from core.fsrs.memory_state import CardState, CardStateSnapshot
 from core.fsrs.constants import FeedbackGrade
 
 
@@ -343,18 +343,22 @@ def batch_log_review_events(events: list[dict]):
         session.close()
 
 
-def get_all_cards_with_state(exercise_type: str, user_id: str) -> list[dict]:
+def get_all_cards_with_state(exercise_type: str, user_id: str) -> list[CardStateSnapshot]:
     """
-    Get all cards with their current state and retrievability.
+    Get all cards with their current retrievability snapshot.
     
     Args:
         exercise_type: Type of exercise to filter by
         user_id: User identifier for scoping review data
     
     Returns:
-        List of dicts with card info and computed retrievability
+        List of CardStateSnapshot values with computed retrievability
     """
-    from core.fsrs.memory_state import calculate_retrievability, get_days_since_ltm_review
+    from core.fsrs.memory_state import (
+        calculate_retrievability,
+        get_days_since_ltm_review,
+        CardStateSnapshot,
+    )
     
     session = get_session()
     try:
@@ -363,7 +367,7 @@ def get_all_cards_with_state(exercise_type: str, user_id: str) -> list[dict]:
             CardStateModel.exercise_type == exercise_type
         ).order_by(CardStateModel.last_review_timestamp.desc()).all()
         
-        result = []
+        result: list[CardStateSnapshot] = []
         for db_card in db_cards:
             last_ltm_ts = (
                 datetime.fromisoformat(db_card.last_ltm_timestamp)
@@ -374,28 +378,20 @@ def get_all_cards_with_state(exercise_type: str, user_id: str) -> list[dict]:
             days_since = get_days_since_ltm_review(last_ltm_ts)
             retrievability = calculate_retrievability(db_card.stability, days_since)
             
-            result.append({
-                "user_id": db_card.user_id,
-                "word_id": db_card.word_id,
-                "lemma": db_card.lemma,
-                "pos": db_card.pos,
-                "exercise_type": db_card.exercise_type,
-                "stability": db_card.stability,
-                "difficulty": db_card.difficulty,
-                "d_eff": db_card.d_eff,
-                "retrievability": retrievability,
-                "review_count": db_card.review_count,
-                "last_review_timestamp": db_card.last_review_timestamp,
-                "last_ltm_timestamp": db_card.last_ltm_timestamp,
-                "stm_success_count_today": db_card.stm_success_count_today
-            })
+            result.append(
+                CardStateSnapshot(
+                    word_id=db_card.word_id,
+                    exercise_type=db_card.exercise_type,
+                    retrievability=retrievability
+                )
+            )
         
         return result
     finally:
         session.close()
 
 
-def get_due_cards(exercise_type: str, user_id: str, r_threshold: float = 0.70) -> list[dict]:
+def get_due_cards(exercise_type: str, user_id: str, r_threshold: float = 0.70) -> list[CardStateSnapshot]:
     """
     Get cards with retrievability below threshold (due for review).
     
@@ -405,15 +401,15 @@ def get_due_cards(exercise_type: str, user_id: str, r_threshold: float = 0.70) -
         r_threshold: Retrievability threshold (default: 0.70)
     
     Returns:
-        List of due cards, sorted by retrievability (most urgent first)
+        List of CardStateSnapshot values, sorted by retrievability (most urgent first)
     """
     all_cards = get_all_cards_with_state(exercise_type, user_id)
     
     # Filter by threshold
-    due_cards = [c for c in all_cards if c["retrievability"] < r_threshold]
+    due_cards = [c for c in all_cards if c.retrievability < r_threshold]
     
     # Sort by retrievability (lowest first = most urgent)
-    due_cards.sort(key=lambda c: c["retrievability"])
+    due_cards.sort(key=lambda c: c.retrievability)
     
     return due_cards
 
@@ -467,22 +463,3 @@ def get_recent_events(user_id: str, limit: int = 10) -> list[dict]:
         session.close()
 
 
-# ---- Convenience functions (aliases for backward compatibility) ----
-
-def get_card_state(
-    user_id: str,
-    word_id: str,
-    exercise_type: str
-) -> Optional[CardState]:
-    """
-    Get current card state (alias for load_card_state).
-
-    Args:
-        user_id: User identifier for scoping review data
-        word_id: Unique word identifier
-        exercise_type: Type of exercise
-
-    Returns:
-        CardState if card has been reviewed, None otherwise
-    """
-    return load_card_state(user_id, word_id, exercise_type)

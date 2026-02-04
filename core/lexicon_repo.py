@@ -79,7 +79,9 @@ def _should_filter_enriched(enriched_only: bool) -> bool:
 
 def get_all_words(
     enriched_only: bool = False,
-    tag: Optional[str] = None
+    tag: Optional[str] = None,
+    pos: Optional[str] = None,
+    require_verb_meta: bool = False
 ) -> list[dict]:
     """
     Get all words from the lexicon.
@@ -87,6 +89,8 @@ def get_all_words(
     Args:
         enriched_only: If True, only return enriched words
         tag: If provided, filter by this tag (checks both user_tags and tags)
+        pos: Optional part of speech filter (e.g., "verb")
+        require_verb_meta: If True, only include verbs with verb_meta populated
 
     Returns:
         List of lexicon entry dictionaries
@@ -105,36 +109,20 @@ def get_all_words(
             {"tags": tag}
         ]
 
+    if pos:
+        query["pos"] = pos
+
+    if require_verb_meta:
+        query["verb_meta"] = {"$ne": None}
+
     return list(collection.find(query))
 
 
-def get_word_by_lemma_pos(lemma: str, pos: str) -> Optional[dict]:
+def get_enriched_verbs() -> list[dict]:
     """
-    Get a specific word by lemma and part of speech.
-
-    Note: This returns the first match. For homonyms with different senses,
-    use get_word_by_id() or specify the sense.
-
-    Args:
-        lemma: The word lemma
-        pos: Part of speech (e.g., "verb", "noun")
-
-    Returns:
-        Lexicon entry dictionary, or None if not found
+    Get all verbs with Phase 2 enrichment (verb_meta populated).
     """
-    collection = get_collection()
-
-    query = {
-        "lemma": lemma,
-        "pos": pos
-    }
-    if ONLY_ENRICHED:
-        query["word_enrichment.enriched"] = True
-    return collection.find_one(query)
-
-
-# Backward compatibility alias
-get_word = get_word_by_lemma_pos
+    return get_all_words(pos="verb", require_verb_meta=True)
 
 
 def get_random_word(
@@ -266,22 +254,6 @@ def get_all_tags() -> list[str]:
     # Return sorted union
     all_tags = user_tags | ai_tags
     return sorted(all_tags)
-
-
-# ---- Utility Functions ----
-
-def word_exists(lemma: str, pos: str) -> bool:
-    """
-    Check if a word exists in the lexicon.
-
-    Args:
-        lemma: The word lemma
-        pos: Part of speech
-
-    Returns:
-        True if the word exists, False otherwise
-    """
-    return get_word(lemma, pos) is not None
 
 
 def generate_word_id() -> str:

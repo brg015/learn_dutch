@@ -64,4 +64,4 @@ VERB_FILTER_THRESHOLD = 0.0  # Start with 0% (all verbs)
 
 # Verb session size (number of verbs per session)
 # Each verb has 2 exercises (perfectum + past tense), so total = 2 × VERB_SESSION_SIZE
-VERB_SESSION_SIZE = 10  # Default: 10 verbs = 20 total exercises (reduced for testing)
+VERB_SESSION_SIZE = 20  # Default: 20 verbs = 40 total exercises

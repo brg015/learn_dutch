@@ -53,6 +53,16 @@ class CardState:
             self.d_eff = self.difficulty
 
 
+@dataclass
+class CardStateSnapshot:
+    """
+    Minimal card state snapshot for pool building.
+    """
+    word_id: str
+    exercise_type: str
+    retrievability: float
+
+
 def calculate_retrievability(
     stability: float,
     days_since_ltm_review: float

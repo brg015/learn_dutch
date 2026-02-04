@@ -99,10 +99,6 @@ class VerbTenseActivity(AbstractActivity):
         # Build answer (infinitive auxiliary + past participle)
         answer_text = f"{auxiliary} {past_participle}"
 
-        # Add irregularity warning if applicable
-        if self.verb_meta.get("is_irregular_participle"):
-            answer_text += "<br><span style='font-size: 0.7em; color: #d9534f;'>⚠️ Irregular participle</span>"
-
         # Get example sentence from examples_perfect
         examples_perfect = self.verb_meta.get("examples_perfect", [])
         example = examples_perfect[0] if examples_perfect else None
@@ -121,10 +117,6 @@ class VerbTenseActivity(AbstractActivity):
 
         # Build answer (singular / plural)
         answer_text = f"{past_singular} / {past_plural}"
-
-        # Add irregularity warning if applicable
-        if self.verb_meta.get("is_irregular_past"):
-            answer_text += "<br><span style='font-size: 0.7em; color: #d9534f;'>⚠️ Irregular past tense</span>"
 
         # Get example sentence from examples_past
         examples_past = self.verb_meta.get("examples_past", [])
