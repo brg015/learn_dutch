@@ -51,10 +51,13 @@ def main():
         end_session()
         st.rerun()
 
-    tabs = st.tabs([page.title for page in PAGES])
-    for tab, page in zip(tabs, PAGES):
-        with tab:
-            page.render(USER_OPTIONS)
+    if st.session_state.current_word is None:
+        tabs = st.tabs([page.title for page in PAGES])
+        for tab, page in zip(tabs, PAGES):
+            with tab:
+                page.render(USER_OPTIONS)
+    else:
+        PAGES[0].render(USER_OPTIONS)
 
 
 if __name__ == "__main__":
