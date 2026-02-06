@@ -53,6 +53,8 @@ from core.fsrs.constants import (
     ETA,
     BASE_GAIN,
     U_RATING,
+    INITIAL_STABILITY,
+    INITIAL_DIFFICULTY,
     VERB_SESSION_SIZE
 )
 
@@ -104,5 +106,7 @@ __all__ = [
     "ETA",
     "BASE_GAIN",
     "U_RATING",
+    "INITIAL_STABILITY",
+    "INITIAL_DIFFICULTY",
     "VERB_SESSION_SIZE",
 ]

@@ -152,8 +152,8 @@ def initialize_new_card(
     lemma: str,
     pos: str,
     exercise_type: str,
-    initial_stability: float = 0.5,
-    initial_difficulty: float = 5.0
+    initial_stability: float | None = None,
+    initial_difficulty: float | None = None
 ) -> CardState:
     """
     Initialize state for a new card (never seen before).
@@ -171,6 +171,11 @@ def initialize_new_card(
         New CardState initialized with defaults
     """
     now = datetime.now(timezone.utc)
+
+    if initial_stability is None or initial_difficulty is None:
+        from core.fsrs.constants import INITIAL_STABILITY, INITIAL_DIFFICULTY
+        initial_stability = INITIAL_STABILITY
+        initial_difficulty = INITIAL_DIFFICULTY
 
     return CardState(
         user_id=user_id,

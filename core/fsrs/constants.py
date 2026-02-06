@@ -34,6 +34,12 @@ ALPHA = 0.15     # Difficulty penalty factor (higher = slower learning for hard 
 ETA = 0.8        # Difficulty adaptation rate (higher = faster difficulty changes)
 
 
+# ---- Initial Card State ----
+
+INITIAL_STABILITY = 0.5
+INITIAL_DIFFICULTY = 5.0
+
+
 # ---- Base Learning Gain by Rating ----
 # Multiplier for stability increase on successful retrieval
 
