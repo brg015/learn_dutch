@@ -98,6 +98,8 @@ def _init_session_state():
         st.session_state.word_pool_state = None
     if "verb_pool_state" not in st.session_state:
         st.session_state.verb_pool_state = None
+    if "verb_response_buffer" not in st.session_state:
+        st.session_state.verb_response_buffer = {}
 
 
 _init_session_state()
@@ -169,6 +171,7 @@ def start_new_session(mode: str):
     st.session_state.learning_mode = mode
     st.session_state.review_events_buffer = []
     st.session_state.cards_buffer = []
+    st.session_state.verb_response_buffer = {}
 
     load_next_word()
 
@@ -269,11 +272,29 @@ def process_feedback(feedback_grade: fsrs.FeedbackGrade):
                 )
         elif exercise_type in ("verb_perfectum", "verb_past_tense"):
             if st.session_state.verb_pool_state is not None:
-                update_pool_state(
-                    st.session_state.verb_pool_state,
-                    word["word_id"],
-                    feedback_grade
-                )
+                word_id = word["word_id"]
+                buffer = st.session_state.verb_response_buffer
+                buffer.setdefault(word_id, []).append(feedback_grade)
+
+                if len(buffer[word_id]) >= 2:
+                    grades = buffer.pop(word_id)
+
+                    if fsrs.FeedbackGrade.AGAIN in grades:
+                        combined = fsrs.FeedbackGrade.AGAIN
+                    else:
+                        in_stm = word_id in st.session_state.verb_pool_state.stm
+                        if in_stm and all(g == fsrs.FeedbackGrade.EASY for g in grades):
+                            combined = fsrs.FeedbackGrade.EASY
+                        elif in_stm:
+                            combined = fsrs.FeedbackGrade.HARD
+                        else:
+                            combined = fsrs.FeedbackGrade.MEDIUM
+
+                    update_pool_state(
+                        st.session_state.verb_pool_state,
+                        word_id,
+                        combined
+                    )
 
         # Update session stats
         st.session_state.session_count += 1
