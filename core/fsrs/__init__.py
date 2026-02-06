@@ -52,7 +52,8 @@ from core.fsrs.constants import (
     ALPHA,
     ETA,
     BASE_GAIN,
-    U_RATING
+    U_RATING,
+    VERB_SESSION_SIZE
 )
 
 # Memory state (for advanced usage)
@@ -103,4 +104,5 @@ __all__ = [
     "ETA",
     "BASE_GAIN",
     "U_RATING",
+    "VERB_SESSION_SIZE",
 ]

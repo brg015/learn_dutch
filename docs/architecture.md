@@ -5,7 +5,7 @@ This document describes the current runtime flow, data stores, and module respon
 ## High-Level Flow
 
 1. The Streamlit app (`app/streamlit_app.py`) initializes session state and the SQL schema.
-2. On session start, the app builds a base pool snapshot (per activity) and a launch-scoped STM set.
+2. On session start, the app builds pool state (per activity) with LTM/STM/NEW/KNOWN.
 3. A session builder selects a batch of words from pools (LTM, STM, NEW).
 4. The active activity renders a card (front/back) and collects feedback.
 5. Feedback updates in-memory STM, buffers card updates/events, and advances the session.
@@ -42,17 +42,23 @@ Snapshots are computed in `get_all_cards_with_state(...)` and are intended to be
 ## Pools and Session Builders
 
 ### STM
-STM is a launch-scoped dynamic set of `(word_id, exercise_type)` keys:
+STM is initialized from recent AGAIN events and merged into pool state:
 
 - Built from recent AGAIN events: `build_stm_set(...)`.
 - Updated after each review: `update_stm_set(...)`.
 - Converted to word dicts when building pools: `build_stm_words(...)`.
 
 ### Pools
-Pools use a fixed schema:
+Pool state uses a fixed schema:
 
 ```
-PoolItem = { word: dict, status: "ltm" | "stm" | "new" }
+PoolState = {
+  word_map: {word_id: word},
+  ltm: set[word_id],
+  stm: set[word_id],
+  new: set[word_id],
+  known: set[word_id]
+}
 ```
 
 Pools are built in the activity-specific builders:
@@ -60,15 +66,21 @@ Pools are built in the activity-specific builders:
 - `core/session_builders/word_builder.py`
 - `core/session_builders/verb_builder.py`
 
-Both use `fill_in_order(...)` to assemble sessions (priority: LTM -> STM -> NEW).
+Both sample pools in priority order (LTM -> STM -> NEW).
 
-### Base Pool Caching
-The Streamlit app caches base pools in `st.session_state`:
+Pool updates during a session:
 
-- `word_pool_cache` for word/sentence sessions
-- `verb_pool_cache` for verb sessions
+- AGAIN: move to STM
+- LTM/NEW + not AGAIN: move to KNOWN
+- STM + EASY: move to KNOWN (HARD/MEDIUM stays in STM)
 
-This reduces DB calls but means pool snapshots are stale within a long-running app. STM remains dynamic.
+### Pool State Caching
+The Streamlit app caches pool state in `st.session_state`:
+
+- `word_pool_state` for word/sentence sessions
+- `verb_pool_state` for verb sessions
+
+This reduces DB calls but means pool membership is stale within a long-running app. Pool updates based on feedback are applied in memory.
 
 ## Activities and UI
 

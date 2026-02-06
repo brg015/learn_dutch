@@ -10,12 +10,12 @@ from datetime import datetime, timezone
 
 from core import fsrs
 from core.session_builders import (
-    build_word_base_pool,
-    build_verb_base_pool,
+    build_word_pool_state,
+    build_verb_pool_state,
     create_word_session,
     create_verb_tense_session,
 )
-from core.session_builders.stm_state import build_stm_set, update_stm_set
+from core.session_builders.pool_utils import update_pool_state
 from app.activities import WordActivity, SentenceActivity, VerbTenseActivity
 from app.ui import (
     render_session_stats,
@@ -94,16 +94,10 @@ def _init_session_state():
         st.session_state.current_tense_step = None
     if "user_id_active" not in st.session_state:
         st.session_state.user_id_active = st.session_state.user_id
-    if "stm_set_word_translation" not in st.session_state:
-        st.session_state.stm_set_word_translation = None
-    if "stm_set_verb_perfectum" not in st.session_state:
-        st.session_state.stm_set_verb_perfectum = None
-    if "stm_set_verb_past_tense" not in st.session_state:
-        st.session_state.stm_set_verb_past_tense = None
-    if "word_pool_cache" not in st.session_state:
-        st.session_state.word_pool_cache = None
-    if "verb_pool_cache" not in st.session_state:
-        st.session_state.verb_pool_cache = None
+    if "word_pool_state" not in st.session_state:
+        st.session_state.word_pool_state = None
+    if "verb_pool_state" not in st.session_state:
+        st.session_state.verb_pool_state = None
 
 
 _init_session_state()
@@ -120,40 +114,24 @@ def start_new_session(mode: str):
     """
     # Reset STM sets when switching users
     if st.session_state.user_id != getattr(st.session_state, "user_id_active", st.session_state.user_id):
-        st.session_state.stm_set_word_translation = None
-        st.session_state.stm_set_verb_perfectum = None
-        st.session_state.stm_set_verb_past_tense = None
-        st.session_state.word_pool_cache = None
-        st.session_state.verb_pool_cache = None
+        st.session_state.word_pool_state = None
+        st.session_state.verb_pool_state = None
         st.session_state.user_id_active = st.session_state.user_id
 
     if mode == "verb_tenses":
-        # Initialize STM sets for verb exercises if needed
-        if st.session_state.stm_set_verb_perfectum is None:
-            st.session_state.stm_set_verb_perfectum = build_stm_set(
+        if st.session_state.verb_pool_state is None:
+            st.session_state.verb_pool_state = build_verb_pool_state(
                 st.session_state.user_id,
-                "verb_perfectum"
-            )
-        if st.session_state.stm_set_verb_past_tense is None:
-            st.session_state.stm_set_verb_past_tense = build_stm_set(
-                st.session_state.user_id,
-                "verb_past_tense"
-            )
-        if st.session_state.verb_pool_cache is None:
-            st.session_state.verb_pool_cache = build_verb_base_pool(
-                st.session_state.user_id
+                r_threshold=fsrs.R_TARGET,
+                filter_known=True
             )
         # Create verb tense session (returns triplets)
         try:
             print("[STREAMLIT] Starting verb session creation...")
             with st.spinner("Creating verb session..."):
                 triplets, message = create_verb_tense_session(
-                    user_id=st.session_state.user_id,
-                    r_threshold=fsrs.R_TARGET,
-                    filter_known=True,
-                    stm_set_perfectum=st.session_state.stm_set_verb_perfectum,
-                    stm_set_past=st.session_state.stm_set_verb_past_tense,
-                    base_pool=st.session_state.verb_pool_cache
+                    pool_state=st.session_state.verb_pool_state,
+                    session_size=fsrs.VERB_SESSION_SIZE
                 )
             print(f"[STREAMLIT] Session creation complete. Got {len(triplets)} triplets")
 
@@ -174,21 +152,13 @@ def start_new_session(mode: str):
             batch.append((word, "past_tense"))
     else:
         # Word translation session (words or sentences mode)
-        if st.session_state.stm_set_word_translation is None:
-            st.session_state.stm_set_word_translation = build_stm_set(
-                st.session_state.user_id,
-                "word_translation"
-            )
-        if st.session_state.word_pool_cache is None:
-            st.session_state.word_pool_cache = build_word_base_pool(
+        if st.session_state.word_pool_state is None:
+            st.session_state.word_pool_state = build_word_pool_state(
                 st.session_state.user_id,
                 "word_translation"
             )
         batch = create_word_session(
-            exercise_type='word_translation',
-            user_id=st.session_state.user_id,
-            stm_set=st.session_state.stm_set_word_translation,
-            base_pool=st.session_state.word_pool_cache
+            pool_state=st.session_state.word_pool_state
         )
 
     st.session_state.session_id = str(uuid.uuid4())
@@ -289,34 +259,21 @@ def process_feedback(feedback_grade: fsrs.FeedbackGrade):
         st.session_state.cards_buffer.append(updated_card)
         st.session_state.review_events_buffer.append(event_data)
 
-        # Update STM set in-memory
+        # Update pool state in-memory
         if exercise_type == "word_translation":
-            if st.session_state.stm_set_word_translation is None:
-                st.session_state.stm_set_word_translation = set()
-            update_stm_set(
-                st.session_state.stm_set_word_translation,
-                word["word_id"],
-                exercise_type,
-                feedback_grade
-            )
-        elif exercise_type == "verb_perfectum":
-            if st.session_state.stm_set_verb_perfectum is None:
-                st.session_state.stm_set_verb_perfectum = set()
-            update_stm_set(
-                st.session_state.stm_set_verb_perfectum,
-                word["word_id"],
-                exercise_type,
-                feedback_grade
-            )
-        elif exercise_type == "verb_past_tense":
-            if st.session_state.stm_set_verb_past_tense is None:
-                st.session_state.stm_set_verb_past_tense = set()
-            update_stm_set(
-                st.session_state.stm_set_verb_past_tense,
-                word["word_id"],
-                exercise_type,
-                feedback_grade
-            )
+            if st.session_state.word_pool_state is not None:
+                update_pool_state(
+                    st.session_state.word_pool_state,
+                    word["word_id"],
+                    feedback_grade
+                )
+        elif exercise_type in ("verb_perfectum", "verb_past_tense"):
+            if st.session_state.verb_pool_state is not None:
+                update_pool_state(
+                    st.session_state.verb_pool_state,
+                    word["word_id"],
+                    feedback_grade
+                )
 
         # Update session stats
         st.session_state.session_count += 1
