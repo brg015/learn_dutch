@@ -22,11 +22,22 @@ def build_verb_pool_state(
     user_id: str,
     r_threshold: float = R_TARGET,
     filter_known: bool = True,
-    user_tags: Optional[Sequence[str]] = None
+    user_tags: Optional[Sequence[str]] = None,
+    pos: Optional[Sequence[str]] = None
 ) -> PoolState:
     """
     Build launch-scoped pool state for verb sessions.
     """
+    if pos is not None and "verb" not in pos:
+        return PoolState(
+            word_map={},
+            ltm=set(),
+            stm=set(),
+            new=set(),
+            known=set(),
+            ltm_scores={}
+        )
+
     all_verbs = lexicon_repo.get_enriched_verbs(
         user_tags=user_tags if user_tags else None
     )

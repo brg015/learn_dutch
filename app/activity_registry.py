@@ -58,7 +58,8 @@ def _build_verb_pool(request: LexicalRequest) -> PoolState:
         request.user_id,
         r_threshold=fsrs.R_TARGET,
         filter_known=not request.override_gates,
-        user_tags=request.user_tags
+        user_tags=request.user_tags,
+        pos=request.pos
     )
 
 

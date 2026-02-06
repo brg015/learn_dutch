@@ -65,8 +65,7 @@ U_RATING = {
 
 # Verb filtering threshold (for verb tense activity)
 # Only practice verbs where base meaning recall >= this threshold
-VERB_FILTER_THRESHOLD = 0.0  # Start with 0% (all verbs)
-# TODO: Increase to 0.70 after initial testing
+VERB_FILTER_THRESHOLD = 0.70  # Start with 0% (all verbs)
 
 # Verb session size (number of verbs per session)
 # Each verb has 2 exercises (perfectum + past tense), so total = 2 × VERB_SESSION_SIZE

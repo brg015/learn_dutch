@@ -21,6 +21,15 @@ class LexicalRequest:
     override_gates: bool = False
 
 
+def request_key_for_mode(mode: str) -> str:
+    """
+    Normalize modes that share a lexical request.
+    """
+    if mode == "sentences":
+        return "words"
+    return mode
+
+
 def default_lexical_request(user_id: str, mode: str) -> LexicalRequest:
     """
     Build a default request for a given mode.
