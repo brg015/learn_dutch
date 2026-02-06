@@ -14,6 +14,7 @@ Session Logic:
 
 from __future__ import annotations
 import random
+from typing import Optional, Sequence
 
 from core import fsrs, lexicon_repo
 from core.session_builders.pool_types import PoolState
@@ -27,12 +28,19 @@ LTM_FRACTION = 0.75         # Fraction of session from LTM pool (0-1)
 
 def build_word_pool_state(
     user_id: str,
-    exercise_type: str = "word_translation"
+    exercise_type: str = "word_translation",
+    user_tags: Optional[Sequence[str]] = None,
+    pos: Optional[Sequence[str]] = None,
+    enriched_only: bool = False
 ) -> PoolState:
     """
     Build launch-scoped pool state for word sessions.
     """
-    all_words = lexicon_repo.get_all_words()
+    all_words = lexicon_repo.get_all_words(
+        enriched_only=enriched_only,
+        user_tags=user_tags,
+        pos=pos
+    )
     word_map = {w.get("word_id"): w for w in all_words if w.get("word_id")}
 
     snapshots = fsrs.get_all_cards_with_state(exercise_type, user_id)

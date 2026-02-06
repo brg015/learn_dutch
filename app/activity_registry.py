@@ -35,7 +35,13 @@ class ActivitySpec:
 
 
 def _build_word_pool(request: LexicalRequest) -> PoolState:
-    return build_word_pool_state(request.user_id, "word_translation")
+    return build_word_pool_state(
+        request.user_id,
+        "word_translation",
+        user_tags=request.user_tags,
+        pos=request.pos,
+        enriched_only=request.only_enriched
+    )
 
 
 def _build_word_items(pool_state: PoolState) -> tuple[list[SessionItem], Optional[str]]:
@@ -51,7 +57,8 @@ def _build_verb_pool(request: LexicalRequest) -> PoolState:
     return build_verb_pool_state(
         request.user_id,
         r_threshold=fsrs.R_TARGET,
-        filter_known=not request.override_gates
+        filter_known=not request.override_gates,
+        user_tags=request.user_tags
     )
 
 

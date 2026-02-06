@@ -10,6 +10,7 @@ Creates verb conjugation study sessions from launch-scoped pools:
 
 from __future__ import annotations
 import random
+from typing import Optional, Sequence
 
 from core import fsrs, lexicon_repo
 from core.session_builders.pool_types import PoolState
@@ -20,12 +21,15 @@ from core.fsrs.constants import R_TARGET, VERB_FILTER_THRESHOLD, VERB_SESSION_SI
 def build_verb_pool_state(
     user_id: str,
     r_threshold: float = R_TARGET,
-    filter_known: bool = True
+    filter_known: bool = True,
+    user_tags: Optional[Sequence[str]] = None
 ) -> PoolState:
     """
     Build launch-scoped pool state for verb sessions.
     """
-    all_verbs = lexicon_repo.get_enriched_verbs()
+    all_verbs = lexicon_repo.get_enriched_verbs(
+        user_tags=user_tags if user_tags else None
+    )
     word_map = {w.get("word_id"): w for w in all_verbs if w.get("word_id")}
 
     meaning_cards = fsrs.get_all_cards_with_state("word_translation", user_id)

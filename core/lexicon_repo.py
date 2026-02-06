@@ -7,7 +7,7 @@ Provides functions to query and retrieve words from the lexicon.
 from __future__ import annotations
 
 import os
-from typing import Optional
+from typing import Optional, Sequence
 
 from dotenv import load_dotenv
 from pymongo import MongoClient
@@ -77,8 +77,8 @@ def _should_filter_enriched(enriched_only: bool) -> bool:
 
 def get_all_words(
     enriched_only: bool = False,
-    tag: Optional[str] = None,
-    pos: Optional[str] = None,
+    user_tags: Optional[Sequence[str]] = None,
+    pos: Optional[Sequence[str]] = None,
     require_verb_meta: bool = False
 ) -> list[dict]:
     """
@@ -86,8 +86,8 @@ def get_all_words(
 
     Args:
         enriched_only: If True, only return enriched words
-        tag: If provided, filter by this tag (checks both user_tags and tags)
-        pos: Optional part of speech filter (e.g., "verb")
+        user_tags: If provided, filter by these user_tags (OR semantics)
+        pos: Optional part of speech filters (e.g., ["verb"])
         require_verb_meta: If True, only include verbs with verb_meta populated
     
     Notes:
@@ -103,15 +103,12 @@ def get_all_words(
     if _should_filter_enriched(enriched_only):
         query["word_enrichment.enriched"] = True
 
-    if tag:
-        # Match tag in either user_tags OR AI-generated tags
-        query["$or"] = [
-            {"user_tags": tag},
-            {"tags": tag}
-        ]
+    if user_tags:
+        # NOTE: For now, only user_tags are used. We'll merge tags later.
+        query["user_tags"] = {"$in": list(user_tags)}
 
     if pos:
-        query["pos"] = pos
+        query["pos"] = {"$in": list(pos)}
 
     if require_verb_meta:
         query["verb_meta"] = {"$ne": None}
@@ -119,11 +116,38 @@ def get_all_words(
     return list(collection.find(query))
 
 
-def get_enriched_verbs() -> list[dict]:
+def get_enriched_verbs(
+    user_tags: Optional[Sequence[str]] = None
+) -> list[dict]:
     """
     Get all verbs with Phase 2 enrichment (verb_meta populated).
     """
-    return get_all_words(pos="verb", require_verb_meta=True)
+    return get_all_words(
+        enriched_only=True,
+        user_tags=user_tags,
+        pos=["verb"],
+        require_verb_meta=True
+    )
+
+
+def get_user_tag_counts(min_count: int = 20) -> list[dict]:
+    """
+    Return user tag counts for UI selection.
+
+    Args:
+        min_count: Minimum number of matches to include a tag.
+    """
+    collection = get_collection()
+    pipeline = [
+        {"$unwind": "$user_tags"},
+        {"$group": {"_id": "$user_tags", "count": {"$sum": 1}}},
+        {"$match": {"count": {"$gte": min_count}}},
+        {"$sort": {"count": -1}},
+    ]
+    return [
+        {"tag": item["_id"], "count": item["count"]}
+        for item in collection.aggregate(pipeline)
+    ]
 
 
 def get_word_by_id(word_id: str) -> Optional[dict]:

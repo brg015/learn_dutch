@@ -15,7 +15,9 @@ class LexicalRequest:
     """
     user_id: str
     mode: str
-    tags: Optional[Tuple[str, ...]] = None
+    user_tags: Optional[Tuple[str, ...]] = None
+    pos: Optional[Tuple[str, ...]] = None
+    only_enriched: bool = False
     override_gates: bool = False
 
 
@@ -23,4 +25,12 @@ def default_lexical_request(user_id: str, mode: str) -> LexicalRequest:
     """
     Build a default request for a given mode.
     """
+    if mode == "verb_tenses":
+        return LexicalRequest(
+            user_id=user_id,
+            mode=mode,
+            pos=("verb",),
+            only_enriched=True,
+            override_gates=False
+        )
     return LexicalRequest(user_id=user_id, mode=mode)
