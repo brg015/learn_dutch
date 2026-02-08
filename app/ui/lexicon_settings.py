@@ -8,7 +8,11 @@ from typing import Optional, Sequence
 
 import streamlit as st
 
-from app.session_requests import LexicalRequest, request_key_for_mode
+from app.session_requests import (
+    LexicalRequest,
+    normalize_lexical_request,
+    request_key_for_mode,
+)
 from core.session_builders import build_word_pool_state, build_verb_pool_state
 from core import fsrs
 from core import lexicon_repo
@@ -41,11 +45,12 @@ def _cached_pos_options(min_count: int = 1) -> list[str]:
 
 def _current_request_for_key(request_key: str) -> LexicalRequest:
     requests = st.session_state.lexical_requests
-    request = requests.get(request_key)
-    if request is None or request.user_id != st.session_state.user_id:
-        from app.session_requests import default_lexical_request
-        request = default_lexical_request(st.session_state.user_id, request_key)
-        requests[request_key] = request
+    request = normalize_lexical_request(
+        requests.get(request_key),
+        st.session_state.user_id,
+        request_key,
+    )
+    requests[request_key] = request
     return request
 
 
@@ -112,6 +117,14 @@ def render_lexicon_settings(user_options: dict[str, str]) -> None:
     apply_all = st.checkbox("Apply to all activities", value=False)
 
     current_request = _current_request_for_key(request_key)
+    ltm_fraction = st.slider(
+        "LTM Session Fraction",
+        min_value=0.0,
+        max_value=1.0,
+        value=float(current_request.ltm_fraction),
+        step=0.05,
+        help="Portion of each session reserved for due LTM items before filling from STM, then NEW.",
+    )
 
     min_count = st.number_input(
         "Minimum tag count",
@@ -163,7 +176,8 @@ def render_lexicon_settings(user_options: dict[str, str]) -> None:
                 user_tags=tuple(selected_tags) if selected_tags else None,
                 pos=tuple(pos_selection) if pos_selection else None,
                 only_enriched=only_enriched,
-                override_gates=False
+                override_gates=False,
+                ltm_fraction=ltm_fraction,
             )
             verb_request = LexicalRequest(
                 user_id=st.session_state.user_id,
@@ -171,7 +185,8 @@ def render_lexicon_settings(user_options: dict[str, str]) -> None:
                 user_tags=tuple(selected_tags) if selected_tags else None,
                 pos=tuple(pos_selection) if pos_selection else None,
                 only_enriched=True,
-                override_gates=allow_override
+                override_gates=allow_override,
+                ltm_fraction=ltm_fraction,
             )
             preview_counts_words = _preview_pool_counts("words", word_request)
             preview_counts_verbs = _preview_pool_counts("verb_tenses", verb_request)
@@ -182,7 +197,8 @@ def render_lexicon_settings(user_options: dict[str, str]) -> None:
                 user_tags=tuple(selected_tags) if selected_tags else None,
                 pos=tuple(pos_selection) if pos_selection else None,
                 only_enriched=only_enriched,
-                override_gates=allow_override
+                override_gates=allow_override,
+                ltm_fraction=ltm_fraction,
             )
             preview_counts = _preview_pool_counts(request_key, preview_request)
 
@@ -221,7 +237,8 @@ def render_lexicon_settings(user_options: dict[str, str]) -> None:
                 user_tags=tuple(selected_tags) if selected_tags else None,
                 pos=tuple(pos_selection) if pos_selection else None,
                 only_enriched=only_enriched,
-                override_gates=False
+                override_gates=False,
+                ltm_fraction=ltm_fraction,
             )
             verb_request = LexicalRequest(
                 user_id=st.session_state.user_id,
@@ -229,7 +246,8 @@ def render_lexicon_settings(user_options: dict[str, str]) -> None:
                 user_tags=tuple(selected_tags) if selected_tags else None,
                 pos=tuple(pos_selection) if pos_selection else None,
                 only_enriched=True,
-                override_gates=allow_override
+                override_gates=allow_override,
+                ltm_fraction=ltm_fraction,
             )
             _apply_request("words", word_request)
             _apply_request("verb_tenses", verb_request)
@@ -240,7 +258,8 @@ def render_lexicon_settings(user_options: dict[str, str]) -> None:
                 user_tags=tuple(selected_tags) if selected_tags else None,
                 pos=tuple(pos_selection) if pos_selection else None,
                 only_enriched=only_enriched,
-                override_gates=allow_override
+                override_gates=allow_override,
+                ltm_fraction=ltm_fraction,
             )
             _apply_request(request_key, request)
 

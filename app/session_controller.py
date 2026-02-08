@@ -11,8 +11,8 @@ import streamlit as st
 
 from app.activity_registry import get_activity_spec
 from app.session_requests import (
-    default_lexical_request,
     request_key_for_mode,
+    normalize_lexical_request,
     LexicalRequest,
 )
 from app.session_types import SessionItem
@@ -23,10 +23,12 @@ from core.session_builders.pool_utils import update_pool_state
 def _get_request_for_mode(mode: str) -> LexicalRequest:
     requests = st.session_state.lexical_requests
     request_key = request_key_for_mode(mode)
-    request = requests.get(request_key)
-    if request is None or request.user_id != st.session_state.user_id:
-        request = default_lexical_request(st.session_state.user_id, request_key)
-        requests[request_key] = request
+    request = normalize_lexical_request(
+        requests.get(request_key),
+        st.session_state.user_id,
+        request_key,
+    )
+    requests[request_key] = request
     return request
 
 
@@ -59,9 +61,9 @@ def start_new_session(mode: str) -> None:
     try:
         if mode == "verb_tenses":
             with st.spinner("Creating verb session..."):
-                items, message = spec.build_items(pool_state)
+                items, message = spec.build_items(pool_state, request)
         else:
-            items, message = spec.build_items(pool_state)
+            items, message = spec.build_items(pool_state, request)
     except Exception as exc:
         st.error(f"Error creating session: {exc}")
         import traceback

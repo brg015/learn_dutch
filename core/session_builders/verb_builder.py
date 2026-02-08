@@ -15,7 +15,12 @@ from typing import Optional, Sequence
 from core import fsrs, lexicon_repo
 from core.session_builders.pool_types import PoolState
 from core.session_builders.stm_state import build_stm_set
-from core.fsrs.constants import R_TARGET, VERB_FILTER_THRESHOLD, VERB_SESSION_SIZE
+from core.fsrs.constants import (
+    LTM_SESSION_FRACTION,
+    R_TARGET,
+    VERB_FILTER_THRESHOLD,
+    VERB_SESSION_SIZE,
+)
 
 
 def build_verb_pool_state(
@@ -107,16 +112,18 @@ def build_verb_pool_state(
 
 def create_verb_tense_session(
     pool_state: PoolState,
-    session_size: int = VERB_SESSION_SIZE
+    session_size: int = VERB_SESSION_SIZE,
+    ltm_fraction: float = LTM_SESSION_FRACTION
 ) -> tuple[list[tuple[dict, str, str]], str]:
     """
     Create a verb tense study session using pool state.
     """
+    ltm_target = int(session_size * ltm_fraction)
     ltm_ids = sorted(
         pool_state.ltm,
         key=lambda word_id: pool_state.ltm_scores.get(word_id, 1.0)
     )
-    session_ids = list(ltm_ids[:session_size])
+    session_ids = list(ltm_ids[:ltm_target])
 
     if len(session_ids) < session_size:
         stm_ids = list(pool_state.stm)

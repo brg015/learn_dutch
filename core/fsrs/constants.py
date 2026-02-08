@@ -12,6 +12,7 @@ from enum import IntEnum
 
 class FeedbackGrade(IntEnum):
     """User feedback on retrieval attempt."""
+
     AGAIN = 1   # Retrieval failed
     HARD = 2    # Retrieved with high effort
     MEDIUM = 3  # Retrieved normally
@@ -61,12 +62,18 @@ U_RATING = {
 }
 
 
+# ---- Session Builder Configuration ----
+
+# Fraction of each session reserved for due LTM cards before topping up from STM/NEW.
+LTM_SESSION_FRACTION = 0.75
+
+
 # ---- Verb Tense Activity Configuration ----
 
 # Verb filtering threshold (for verb tense activity)
-# Only practice verbs where base meaning recall >= this threshold
-VERB_FILTER_THRESHOLD = 0.70  # Start with 0% (all verbs)
+# Only practice verbs where base meaning recall >= this threshold.
+VERB_FILTER_THRESHOLD = 0.70
 
 # Verb session size (number of verbs per session)
-# Each verb has 2 exercises (perfectum + past tense), so total = 2 × VERB_SESSION_SIZE
+# Each verb has 2 exercises (perfectum + past tense), so total = 2 * VERB_SESSION_SIZE.
 VERB_SESSION_SIZE = 20  # Default: 20 verbs = 40 total exercises

@@ -7,7 +7,7 @@ Creates study sessions from three distinct pools:
 3. New pool: Cards never seen before
 
 Session Logic:
-- Fill LTM due up to LTM_FRACTION
+- Fill LTM due up to LTM_SESSION_FRACTION
 - Top up from STM
 - Top up from NEW
 """
@@ -19,11 +19,10 @@ from typing import Optional, Sequence
 from core import fsrs, lexicon_repo
 from core.session_builders.pool_types import PoolState
 from core.session_builders.stm_state import build_stm_set
-from core.fsrs.constants import R_TARGET
+from core.fsrs.constants import LTM_SESSION_FRACTION, R_TARGET
 
 # ---- Session Configuration ----
 SESSION_SIZE = 20           # Words per session
-LTM_FRACTION = 0.75         # Fraction of session from LTM pool (0-1)
 
 
 def build_word_pool_state(
@@ -85,7 +84,7 @@ def build_word_pool_state(
 def create_session(
     pool_state: PoolState,
     session_size: int = SESSION_SIZE,
-    ltm_fraction: float = LTM_FRACTION
+    ltm_fraction: float = LTM_SESSION_FRACTION
 ) -> list[dict]:
     """
     Create a study session using three-pool logic.

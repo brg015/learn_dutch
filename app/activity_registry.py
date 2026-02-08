@@ -30,7 +30,7 @@ class ActivitySpec:
     description: str
     pool_key: str
     build_pool: Callable[[LexicalRequest], PoolState]
-    build_items: Callable[[PoolState], tuple[list[SessionItem], Optional[str]]]
+    build_items: Callable[[PoolState, LexicalRequest], tuple[list[SessionItem], Optional[str]]]
     activity_factory: Callable[[SessionItem], object]
 
 
@@ -44,8 +44,11 @@ def _build_word_pool(request: LexicalRequest) -> PoolState:
     )
 
 
-def _build_word_items(pool_state: PoolState) -> tuple[list[SessionItem], Optional[str]]:
-    words = create_word_session(pool_state)
+def _build_word_items(
+    pool_state: PoolState,
+    request: LexicalRequest
+) -> tuple[list[SessionItem], Optional[str]]:
+    words = create_word_session(pool_state, ltm_fraction=request.ltm_fraction)
     items = [
         SessionItem(word=word, exercise_type="word_translation")
         for word in words
@@ -63,10 +66,14 @@ def _build_verb_pool(request: LexicalRequest) -> PoolState:
     )
 
 
-def _build_verb_items(pool_state: PoolState) -> tuple[list[SessionItem], Optional[str]]:
+def _build_verb_items(
+    pool_state: PoolState,
+    request: LexicalRequest
+) -> tuple[list[SessionItem], Optional[str]]:
     triplets, message = create_verb_tense_session(
         pool_state=pool_state,
-        session_size=fsrs.VERB_SESSION_SIZE
+        session_size=fsrs.VERB_SESSION_SIZE,
+        ltm_fraction=request.ltm_fraction,
     )
     if not triplets:
         return [], message

@@ -55,6 +55,7 @@ from core.fsrs.constants import (
     U_RATING,
     INITIAL_STABILITY,
     INITIAL_DIFFICULTY,
+    LTM_SESSION_FRACTION,
     VERB_SESSION_SIZE
 )
 
@@ -108,5 +109,6 @@ __all__ = [
     "U_RATING",
     "INITIAL_STABILITY",
     "INITIAL_DIFFICULTY",
+    "LTM_SESSION_FRACTION",
     "VERB_SESSION_SIZE",
 ]
