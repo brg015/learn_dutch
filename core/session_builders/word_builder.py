@@ -10,6 +10,7 @@ Session Logic:
 - Fill LTM due up to LTM_SESSION_FRACTION
 - Top up from STM
 - Top up from NEW
+- If still underfilled, top up from remaining LTM
 """
 
 from __future__ import annotations
@@ -117,6 +118,13 @@ def create_session(
         new_ids = list(pool_state.new)
         if new_ids:
             session_ids.extend(random.sample(new_ids, min(remaining, len(new_ids))))
+
+    if len(session_ids) < session_size:
+        remaining = session_size - len(session_ids)
+        selected_ids = set(session_ids)
+        remaining_ltm_ids = [word_id for word_id in ltm_ids if word_id not in selected_ids]
+        if remaining_ltm_ids:
+            session_ids.extend(remaining_ltm_ids[:remaining])
 
     words = [pool_state.word_map[word_id] for word_id in session_ids if word_id in pool_state.word_map]
     random.shuffle(words)

@@ -139,6 +139,13 @@ def create_verb_tense_session(
         if new_ids:
             session_ids.extend(random.sample(new_ids, min(remaining, len(new_ids))))
 
+    if len(session_ids) < session_size:
+        remaining = session_size - len(session_ids)
+        selected_ids = set(session_ids)
+        remaining_ltm_ids = [word_id for word_id in ltm_ids if word_id not in selected_ids]
+        if remaining_ltm_ids:
+            session_ids.extend(remaining_ltm_ids[:remaining])
+
     if not session_ids:
         return [], "No verbs available. Learn more verb meanings to practice conjugation!"
 
