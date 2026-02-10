@@ -7,6 +7,7 @@ Learning mode: Practice verb conjugations (perfectum and past tense).
 import streamlit as st
 from app.activities.base import AbstractActivity
 from app.ui.flashcard import render_flashcard
+from app.ui.flashcard_style import VERB_BACK_STYLE, VERB_FRONT_STYLE
 
 
 class VerbTenseActivity(AbstractActivity):
@@ -47,9 +48,7 @@ class VerbTenseActivity(AbstractActivity):
 
         render_flashcard(
             main_text=lemma_text,
-            main_font_size="2.6em",
-            subtitle_font_size="1.0em",
-            bg_color="#f0f2f6"
+            style=VERB_FRONT_STYLE,
         )
 
     def render_card_back(self) -> None:
@@ -80,10 +79,7 @@ class VerbTenseActivity(AbstractActivity):
             main_text=answer_text,
             subtitle=subtitle_text,
             corner_text=corner_text,
-            main_font_size="2.2em",
-            subtitle_font_size="1.0em",
-            bg_color="#e8f4f8",
-            wrap_text=True
+            style=VERB_BACK_STYLE,
         )
 
     def _build_perfectum_answer(self) -> tuple[str, dict | None]:

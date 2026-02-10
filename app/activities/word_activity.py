@@ -6,6 +6,7 @@ Learning mode: Practice individual words.
 
 from app.activities.base import AbstractActivity
 from app.ui.flashcard import render_flashcard
+from app.ui.flashcard_style import WORD_BACK_STYLE, WORD_FRONT_STYLE
 
 
 class WordActivity(AbstractActivity):
@@ -24,8 +25,7 @@ class WordActivity(AbstractActivity):
             lemma_text = f"{article} {lemma_text}"
         render_flashcard(
             main_text=lemma_text,
-            main_font_size="2.5em",
-            bg_color="#f0f2f6"
+            style=WORD_FRONT_STYLE,
         )
 
     def render_card_back(self) -> None:
@@ -42,7 +42,7 @@ class WordActivity(AbstractActivity):
         render_flashcard(
             main_text=translation_text,
             corner_text=lemma_text,
-            bg_color="#e8f4f8"
+            style=WORD_BACK_STYLE,
         )
 
     def get_presentation_mode(self) -> str:

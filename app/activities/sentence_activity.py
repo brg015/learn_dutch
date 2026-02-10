@@ -7,6 +7,7 @@ Learning mode: Practice words in sentence context.
 import random
 from app.activities.base import AbstractActivity
 from app.ui.flashcard import render_flashcard
+from app.ui.flashcard_style import SENTENCE_BACK_STYLE, SENTENCE_FRONT_STYLE
 
 
 class SentenceActivity(AbstractActivity):
@@ -36,7 +37,11 @@ class SentenceActivity(AbstractActivity):
     def render_card_front(self) -> None:
         """Render sentence on front of card."""
         if self.example is None:
-            render_flashcard(main_text="No example sentences available", main_color="#999")
+            render_flashcard(
+                main_text="No example sentences available",
+                style=SENTENCE_FRONT_STYLE,
+                main_color="#999",
+            )
             return
         
         sentence = self.example['dutch']
@@ -50,15 +55,17 @@ class SentenceActivity(AbstractActivity):
         render_flashcard(
             main_text=sentence,
             corner_text=lemma_text,
-            main_font_size="2.0em",
-            wrap_text=True,
-            bg_color="#f0f2f6"
+            style=SENTENCE_FRONT_STYLE,
         )
 
     def render_card_back(self) -> None:
         """Render translations on back of card."""
         if self.example is None:
-            render_flashcard(main_text="No example sentences available", main_color="#999")
+            render_flashcard(
+                main_text="No example sentences available",
+                style=SENTENCE_BACK_STYLE,
+                main_color="#999",
+            )
             return
         
         translation = self.word.get("translation", "No translation")
@@ -74,8 +81,7 @@ class SentenceActivity(AbstractActivity):
             main_text=translation,
             subtitle=sentence_translation,
             corner_text=lemma_text,
-            wrap_text=True,
-            bg_color="#e8f4f8"
+            style=SENTENCE_BACK_STYLE,
         )
 
     def get_presentation_mode(self) -> str:
