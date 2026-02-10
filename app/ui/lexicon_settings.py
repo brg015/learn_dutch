@@ -168,10 +168,7 @@ def render_lexicon_settings(user_options: dict[str, str]) -> None:
             options=pos_options,
             default=list(current_request.pos or [])
         )
-        only_enriched = st.checkbox(
-            "Only enriched",
-            value=current_request.only_enriched
-        )
+        only_enriched = True
         verb_request_current = _current_request_for_key("verb_tenses")
         preposition_request_current = _current_request_for_key("prepositions")
         allow_override_verbs = st.checkbox(
@@ -200,10 +197,7 @@ def render_lexicon_settings(user_options: dict[str, str]) -> None:
             options=pos_options,
             default=list(current_request.pos or [])
         )
-        only_enriched = st.checkbox(
-            "Only enriched",
-            value=current_request.only_enriched
-        )
+        only_enriched = True
         if request_key == "prepositions":
             allow_override_prepositions = st.checkbox(
                 "Allow words without known meaning",
