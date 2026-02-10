@@ -7,15 +7,17 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Callable, Optional
 
-from app.activities import WordActivity, SentenceActivity, VerbTenseActivity
+from app.activities import WordActivity, SentenceActivity, VerbTenseActivity, PrepositionActivity
 from app.session_requests import LexicalRequest
 from app.session_types import SessionItem
 from core import fsrs
 from core.session_builders import (
     build_word_pool_state,
     build_verb_pool_state,
+    build_preposition_pool_state,
     create_word_session,
     create_verb_tense_session,
+    create_preposition_session,
 )
 from core.session_builders.pool_types import PoolState
 
@@ -100,6 +102,36 @@ def _build_verb_items(
     return items, None
 
 
+def _build_preposition_pool(request: LexicalRequest) -> PoolState:
+    return build_preposition_pool_state(
+        user_id=request.user_id,
+        user_tags=request.user_tags,
+        pos=request.pos,
+        enriched_only=request.only_enriched,
+        r_threshold=fsrs.PREPOSITION_FILTER_THRESHOLD,
+        filter_known=not request.override_gates,
+    )
+
+
+def _build_preposition_items(
+    pool_state: PoolState,
+    request: LexicalRequest
+) -> tuple[list[SessionItem], Optional[str]]:
+    words = create_preposition_session(
+        pool_state=pool_state,
+        session_size=fsrs.PREPOSITION_SESSION_SIZE,
+        ltm_fraction=request.ltm_fraction,
+    )
+    if not words:
+        return [], "No words with usable preposition sentences available."
+
+    items = [
+        SessionItem(word=word, exercise_type="word_preposition")
+        for word in words
+    ]
+    return items, None
+
+
 ACTIVITY_SPECS: dict[str, ActivitySpec] = {
     "words": ActivitySpec(
         mode="words",
@@ -127,6 +159,15 @@ ACTIVITY_SPECS: dict[str, ActivitySpec] = {
         build_pool=_build_verb_pool,
         build_items=_build_verb_items,
         activity_factory=lambda item: VerbTenseActivity(item.word, item.tense_step),
+    ),
+    "prepositions": ActivitySpec(
+        mode="prepositions",
+        label="Prepositions",
+        description="Practice fixed preposition usage in context",
+        pool_key="preposition_pool",
+        build_pool=_build_preposition_pool,
+        build_items=_build_preposition_items,
+        activity_factory=lambda item: PrepositionActivity(item.word),
     ),
 }
 

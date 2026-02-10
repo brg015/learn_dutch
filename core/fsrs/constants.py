@@ -77,3 +77,10 @@ VERB_FILTER_THRESHOLD = 0.70
 # Verb session size (number of verbs per session)
 # Each verb has 2 exercises (perfectum + past tense), so total = 2 * VERB_SESSION_SIZE.
 VERB_SESSION_SIZE = 20  # Default: 20 verbs = 40 total exercises
+
+# Preposition drill session size (one word per item).
+PREPOSITION_SESSION_SIZE = 20
+
+# Preposition filtering threshold
+# Only practice preposition usage where base meaning recall >= this threshold.
+PREPOSITION_FILTER_THRESHOLD = 0.70

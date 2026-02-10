@@ -76,4 +76,10 @@ def default_lexical_request(user_id: str, mode: str) -> LexicalRequest:
             only_enriched=True,
             override_gates=False
         )
+    if mode == "prepositions":
+        return LexicalRequest(
+            user_id=user_id,
+            mode=mode,
+            only_enriched=True,
+        )
     return LexicalRequest(user_id=user_id, mode=mode)

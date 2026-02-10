@@ -41,6 +41,10 @@ def _get_pool_state(spec, request: LexicalRequest):
         if st.session_state.verb_pool_state is None:
             st.session_state.verb_pool_state = spec.build_pool(request)
         return st.session_state.verb_pool_state
+    if spec.pool_key == "preposition_pool":
+        if st.session_state.preposition_pool_state is None:
+            st.session_state.preposition_pool_state = spec.build_pool(request)
+        return st.session_state.preposition_pool_state
     raise ValueError(f"Unknown pool key: {spec.pool_key}")
 
 
@@ -51,6 +55,7 @@ def start_new_session(mode: str) -> None:
     if st.session_state.user_id != getattr(st.session_state, "user_id_active", st.session_state.user_id):
         st.session_state.word_pool_state = None
         st.session_state.verb_pool_state = None
+        st.session_state.preposition_pool_state = None
         st.session_state.lexical_requests = {}
         st.session_state.user_id_active = st.session_state.user_id
 
@@ -185,6 +190,13 @@ def process_feedback(feedback_grade: fsrs.FeedbackGrade) -> None:
                         word_id,
                         combined
                     )
+        elif exercise_type == "word_preposition":
+            if st.session_state.preposition_pool_state is not None:
+                update_pool_state(
+                    st.session_state.preposition_pool_state,
+                    word["word_id"],
+                    feedback_grade
+                )
 
         st.session_state.session_count += 1
         if feedback_grade != fsrs.FeedbackGrade.AGAIN:

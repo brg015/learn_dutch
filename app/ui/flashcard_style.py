@@ -87,3 +87,18 @@ VERB_BACK_STYLE = FlashcardStyle(
     wrap_text=True,
     bg_color=BACK_BG_COLOR,
 )
+
+PREPOSITION_FRONT_STYLE = FlashcardStyle(
+    main_font_size="1.7em",
+    corner_font_size="0.85em",
+    wrap_text=True,
+    bg_color=FRONT_BG_COLOR,
+)
+
+PREPOSITION_BACK_STYLE = FlashcardStyle(
+    main_font_size="1.6em",
+    subtitle_font_size="1.0em",
+    subtitle_style="normal",
+    wrap_text=True,
+    bg_color=BACK_BG_COLOR,
+)

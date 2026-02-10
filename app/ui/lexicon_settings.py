@@ -13,7 +13,11 @@ from app.session_requests import (
     normalize_lexical_request,
     request_key_for_mode,
 )
-from core.session_builders import build_word_pool_state, build_verb_pool_state
+from core.session_builders import (
+    build_word_pool_state,
+    build_verb_pool_state,
+    build_preposition_pool_state,
+)
 from core import fsrs
 from core import lexicon_repo
 
@@ -58,6 +62,8 @@ def _apply_request(request_key: str, request: LexicalRequest) -> None:
     st.session_state.lexical_requests[request_key] = request
     if request_key == "verb_tenses":
         st.session_state.verb_pool_state = None
+    elif request_key == "prepositions":
+        st.session_state.preposition_pool_state = None
     elif request_key == "words":
         st.session_state.word_pool_state = None
 
@@ -70,6 +76,15 @@ def _preview_pool_counts(request_key: str, request: LexicalRequest) -> Optional[
             filter_known=not request.override_gates,
             user_tags=request.user_tags,
             pos=request.pos
+        )
+    elif request_key == "prepositions":
+        pool_state = build_preposition_pool_state(
+            user_id=request.user_id,
+            user_tags=request.user_tags,
+            pos=request.pos,
+            enriched_only=request.only_enriched,
+            r_threshold=fsrs.PREPOSITION_FILTER_THRESHOLD,
+            filter_known=not request.override_gates,
         )
     else:
         pool_state = build_word_pool_state(
@@ -107,7 +122,8 @@ def render_lexicon_settings(user_options: dict[str, str]) -> None:
 
     activity_choices = {
         "Word activities (words + sentences)": "words",
-        "Verb conjugation": "verb_tenses",
+        "Grammar: Verb Tenses": "verb_tenses",
+        "Preposition Usage (verbs, nouns, adjectives)": "prepositions",
     }
     selected_activity = st.selectbox(
         "Apply filters to",
@@ -143,17 +159,10 @@ def render_lexicon_settings(user_options: dict[str, str]) -> None:
     pos_options = _cached_pos_options()
     pos_selection: Sequence[str] = current_request.pos or ()
 
-    if request_key == "verb_tenses" and not apply_all:
-        st.info("Verb sessions force POS=verb and enriched-only.")
-        pos_selection = ("verb",)
-        only_enriched = True
-        allow_override = st.checkbox(
-            "Allow verbs without known meaning",
-            value=current_request.override_gates
-        )
-    else:
-        if request_key == "verb_tenses":
-            st.info("Verb sessions only use POS=verb; excluding verbs yields an empty verb pool.")
+    allow_override_verbs = False
+    allow_override_prepositions = False
+
+    if apply_all:
         pos_selection = st.multiselect(
             "Parts of speech",
             options=pos_options,
@@ -163,11 +172,51 @@ def render_lexicon_settings(user_options: dict[str, str]) -> None:
             "Only enriched",
             value=current_request.only_enriched
         )
+        verb_request_current = _current_request_for_key("verb_tenses")
+        preposition_request_current = _current_request_for_key("prepositions")
+        allow_override_verbs = st.checkbox(
+            "Allow verbs without known meaning (Verb Tenses)",
+            value=verb_request_current.override_gates,
+        )
+        allow_override_prepositions = st.checkbox(
+            "Allow words without known meaning (Prepositions)",
+            value=preposition_request_current.override_gates,
+        )
         allow_override = False
+    elif request_key == "verb_tenses":
+        st.info("Verb sessions force POS=verb and enriched-only.")
+        pos_selection = ("verb",)
+        only_enriched = True
+        allow_override_verbs = st.checkbox(
+            "Allow verbs without known meaning",
+            value=current_request.override_gates
+        )
+        allow_override = allow_override_verbs
+    else:
+        if request_key == "prepositions":
+            st.info("Preposition sessions include verbs, nouns, and adjectives with usage examples.")
+        pos_selection = st.multiselect(
+            "Parts of speech",
+            options=pos_options,
+            default=list(current_request.pos or [])
+        )
+        only_enriched = st.checkbox(
+            "Only enriched",
+            value=current_request.only_enriched
+        )
+        if request_key == "prepositions":
+            allow_override_prepositions = st.checkbox(
+                "Allow words without known meaning",
+                value=current_request.override_gates
+            )
+            allow_override = allow_override_prepositions
+        else:
+            allow_override = False
 
     preview_counts = None
     preview_counts_words = None
     preview_counts_verbs = None
+    preview_counts_prepositions = None
     if st.button("Preview pools"):
         if apply_all:
             word_request = LexicalRequest(
@@ -185,11 +234,21 @@ def render_lexicon_settings(user_options: dict[str, str]) -> None:
                 user_tags=tuple(selected_tags) if selected_tags else None,
                 pos=tuple(pos_selection) if pos_selection else None,
                 only_enriched=True,
-                override_gates=allow_override,
+                override_gates=allow_override_verbs,
+                ltm_fraction=ltm_fraction,
+            )
+            preposition_request = LexicalRequest(
+                user_id=st.session_state.user_id,
+                mode="prepositions",
+                user_tags=tuple(selected_tags) if selected_tags else None,
+                pos=tuple(pos_selection) if pos_selection else None,
+                only_enriched=only_enriched,
+                override_gates=allow_override_prepositions,
                 ltm_fraction=ltm_fraction,
             )
             preview_counts_words = _preview_pool_counts("words", word_request)
             preview_counts_verbs = _preview_pool_counts("verb_tenses", verb_request)
+            preview_counts_prepositions = _preview_pool_counts("prepositions", preposition_request)
         else:
             preview_request = LexicalRequest(
                 user_id=st.session_state.user_id,
@@ -220,6 +279,15 @@ def render_lexicon_settings(user_options: dict[str, str]) -> None:
             f"NEW {preview_counts_verbs['new']} | "
             f"KNOWN {preview_counts_verbs['known']}"
         )
+    if preview_counts_prepositions:
+        st.caption(
+            "Prepositions: "
+            f"Total {preview_counts_prepositions['total']} | "
+            f"LTM {preview_counts_prepositions['ltm']} | "
+            f"STM {preview_counts_prepositions['stm']} | "
+            f"NEW {preview_counts_prepositions['new']} | "
+            f"KNOWN {preview_counts_prepositions['known']}"
+        )
     if preview_counts:
         st.caption(
             f"Total {preview_counts['total']} | "
@@ -246,11 +314,21 @@ def render_lexicon_settings(user_options: dict[str, str]) -> None:
                 user_tags=tuple(selected_tags) if selected_tags else None,
                 pos=tuple(pos_selection) if pos_selection else None,
                 only_enriched=True,
-                override_gates=allow_override,
+                override_gates=allow_override_verbs,
+                ltm_fraction=ltm_fraction,
+            )
+            preposition_request = LexicalRequest(
+                user_id=st.session_state.user_id,
+                mode="prepositions",
+                user_tags=tuple(selected_tags) if selected_tags else None,
+                pos=tuple(pos_selection) if pos_selection else None,
+                only_enriched=only_enriched,
+                override_gates=allow_override_prepositions,
                 ltm_fraction=ltm_fraction,
             )
             _apply_request("words", word_request)
             _apply_request("verb_tenses", verb_request)
+            _apply_request("prepositions", preposition_request)
         else:
             request = LexicalRequest(
                 user_id=st.session_state.user_id,
@@ -270,6 +348,7 @@ def render_lexicon_settings(user_options: dict[str, str]) -> None:
             from app.session_requests import default_lexical_request
             _apply_request("words", default_lexical_request(st.session_state.user_id, "words"))
             _apply_request("verb_tenses", default_lexical_request(st.session_state.user_id, "verb_tenses"))
+            _apply_request("prepositions", default_lexical_request(st.session_state.user_id, "prepositions"))
         else:
             from app.session_requests import default_lexical_request
             _apply_request(request_key, default_lexical_request(st.session_state.user_id, request_key))

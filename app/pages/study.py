@@ -51,8 +51,8 @@ def _render_intro_screen(user_options: dict[str, str]) -> None:
             start_new_session("sentences")
             st.rerun()
 
-    st.markdown("### 🔄 Verb Conjugation")
-    st.markdown("Practice verb tenses (perfectum and past tense):")
+    st.markdown("### Grammar & Usage")
+    st.markdown("Practice conjugation and usage patterns:")
 
     st.markdown(
         """
@@ -72,11 +72,17 @@ def _render_intro_screen(user_options: dict[str, str]) -> None:
         """,
         unsafe_allow_html=True
     )
+    col_grammar_1, col_grammar_2 = st.columns(2)
 
-    if st.button("Verb Tenses", type="secondary", use_container_width=True, help="Practice verb conjugations"):
-        start_new_session("verb_tenses")
-        st.rerun()
+    with col_grammar_1:
+        if st.button("Verb Tenses", type="secondary", use_container_width=True, help="Practice verb conjugations"):
+            start_new_session("verb_tenses")
+            st.rerun()
 
+    with col_grammar_2:
+        if st.button("Prepositions", type="secondary", use_container_width=True, help="Practice fixed preposition usage"):
+            start_new_session("prepositions")
+            st.rerun()
 
 def _render_active_session() -> None:
     word = st.session_state.current_word
@@ -104,3 +110,4 @@ def _render_active_session() -> None:
 
     if fsrs.is_test_mode():
         st.caption("TEST MODE - Using test_learning_db")
+

@@ -20,8 +20,9 @@ class WordActivity(AbstractActivity):
         """Render word on front of card."""
         word = self.word
         lemma_text = word["lemma"]
-        if word.get("pos") == "noun" and word.get("noun_meta", {}).get("article"):
-            article = word["noun_meta"]["article"]
+        noun_meta = word.get("noun_meta") or {}
+        if word.get("pos") == "noun" and noun_meta.get("article"):
+            article = noun_meta["article"]
             lemma_text = f"{article} {lemma_text}"
         render_flashcard(
             main_text=lemma_text,
@@ -32,11 +33,12 @@ class WordActivity(AbstractActivity):
         """Render translation on back of card."""
         word = self.word
         translation_text = word.get("translation", "No translation")
-        
+
         # Get lemma with article for nouns
         lemma_text = word["lemma"]
-        if word["pos"] == "noun" and word.get("noun_meta", {}).get("article"):
-            article = word["noun_meta"]["article"]
+        noun_meta = word.get("noun_meta") or {}
+        if word["pos"] == "noun" and noun_meta.get("article"):
+            article = noun_meta["article"]
             lemma_text = f"{article} {lemma_text}"
         
         render_flashcard(

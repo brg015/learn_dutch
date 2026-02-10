@@ -45,11 +45,12 @@ class SentenceActivity(AbstractActivity):
             return
         
         sentence = self.example['dutch']
-        
+
         # Get lemma with article for nouns
         lemma_text = self.word["lemma"]
-        if self.word["pos"] == "noun" and self.word.get("noun_meta", {}).get("article"):
-            article = self.word["noun_meta"]["article"]
+        noun_meta = self.word.get("noun_meta") or {}
+        if self.word["pos"] == "noun" and noun_meta.get("article"):
+            article = noun_meta["article"]
             lemma_text = f"{article} {lemma_text}"
         
         render_flashcard(
@@ -70,11 +71,12 @@ class SentenceActivity(AbstractActivity):
         
         translation = self.word.get("translation", "No translation")
         sentence_translation = self.example['english']
-        
+
         # Get lemma with article for nouns
         lemma_text = self.word["lemma"]
-        if self.word["pos"] == "noun" and self.word.get("noun_meta", {}).get("article"):
-            article = self.word["noun_meta"]["article"]
+        noun_meta = self.word.get("noun_meta") or {}
+        if self.word["pos"] == "noun" and noun_meta.get("article"):
+            article = noun_meta["article"]
             lemma_text = f"{article} {lemma_text}"
         
         render_flashcard(

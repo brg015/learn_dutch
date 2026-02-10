@@ -65,6 +65,8 @@ def ensure_session_state(user_options: dict[str, str]) -> None:
         st.session_state.word_pool_state = None
     if "verb_pool_state" not in st.session_state:
         st.session_state.verb_pool_state = None
+    if "preposition_pool_state" not in st.session_state:
+        st.session_state.preposition_pool_state = None
     if "verb_response_buffer" not in st.session_state:
         st.session_state.verb_response_buffer = {}
     if "lexical_requests" not in st.session_state:
