@@ -449,3 +449,57 @@ def get_recent_events(user_id: str, limit: int = 10) -> list[dict]:
         session.close()
 
 
+def get_review_events(
+    user_id: str,
+    exercise_types: Optional[list[str]] = None
+) -> list[dict]:
+    """
+    Get full review event history for a user, optionally filtered by exercise type.
+
+    Args:
+        user_id: User identifier for scoping review data
+        exercise_types: Optional list of exercise types to include
+
+    Returns:
+        List of events ordered by timestamp ascending
+    """
+    session = get_session()
+    try:
+        query = session.query(ReviewEventModel).filter(
+            ReviewEventModel.user_id == user_id
+        )
+        if exercise_types:
+            query = query.filter(ReviewEventModel.exercise_type.in_(exercise_types))
+
+        events = query.order_by(ReviewEventModel.timestamp.asc()).all()
+
+        result = []
+        for event in events:
+            result.append({
+                "id": event.id,
+                "user_id": event.user_id,
+                "word_id": event.word_id,
+                "exercise_type": event.exercise_type,
+                "lemma": event.lemma,
+                "pos": event.pos,
+                "timestamp": event.timestamp,
+                "feedback_grade": event.feedback_grade,
+                "latency_ms": event.latency_ms,
+                "stability_before": event.stability_before,
+                "difficulty_before": event.difficulty_before,
+                "d_eff_before": event.d_eff_before,
+                "retrievability_before": event.retrievability_before,
+                "stability_after": event.stability_after,
+                "difficulty_after": event.difficulty_after,
+                "d_eff_after": event.d_eff_after,
+                "is_ltm_event": event.is_ltm_event,
+                "session_id": event.session_id,
+                "session_position": event.session_position,
+                "presentation_mode": event.presentation_mode
+            })
+
+        return result
+    finally:
+        session.close()
+
+

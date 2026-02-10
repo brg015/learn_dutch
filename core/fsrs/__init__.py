@@ -37,7 +37,8 @@ from core.fsrs.database import (
     batch_log_review_events,
     get_due_cards,
     get_all_cards_with_state,
-    get_recent_events
+    get_recent_events,
+    get_review_events,
 )
 
 # Constants and parameters
@@ -87,6 +88,7 @@ __all__ = [
     "get_due_cards",
     "get_all_cards_with_state",
     "get_recent_events",
+    "get_review_events",
 
     # Enums
     "FeedbackGrade",
