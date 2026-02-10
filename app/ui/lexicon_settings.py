@@ -107,18 +107,9 @@ def render_lexicon_settings(user_options: dict[str, str]) -> None:
     """
     Render lexicon settings UI.
     """
+    del user_options  # user is selected once on app entry
     st.subheader("Lexicon Settings")
-
-    user_labels = list(user_options.keys())
-    selected_label = st.selectbox(
-        "User",
-        user_labels,
-        index=user_labels.index(st.session_state.user_label)
-        if st.session_state.user_label in user_labels
-        else 0
-    )
-    st.session_state.user_label = selected_label
-    st.session_state.user_id = user_options[selected_label]
+    st.caption(f"User: {st.session_state.user_label} ({st.session_state.user_id})")
 
     activity_choices = {
         "Word activities (words + sentences)": "words",

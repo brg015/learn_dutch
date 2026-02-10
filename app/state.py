@@ -31,6 +31,8 @@ def ensure_session_state(user_options: dict[str, str]) -> None:
             (label for label, uid in user_options.items() if uid == default_user_id),
             "Ben"
         )
+    if "user_selected" not in st.session_state:
+        st.session_state.user_selected = False
     if "current_word" not in st.session_state:
         st.session_state.current_word = None
     if "show_answer" not in st.session_state:

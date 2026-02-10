@@ -65,7 +65,7 @@ U_RATING = {
 # ---- Session Builder Configuration ----
 
 # Fraction of each session reserved for due LTM cards before topping up from STM/NEW.
-LTM_SESSION_FRACTION = 0.75
+LTM_SESSION_FRACTION = 0.50
 
 
 # ---- Verb Tense Activity Configuration ----

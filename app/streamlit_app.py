@@ -43,8 +43,42 @@ ensure_session_state(USER_OPTIONS)
 
 # ---- Main App ----
 
+def _render_user_entry_screen() -> None:
+    """
+    Render a simple per-launch user selection screen.
+    """
+    st.title("🇳🇱 Dutch Vocabulary Trainer")
+    st.markdown("### Select User")
+    labels = list(USER_OPTIONS.keys())
+    selected_label = st.radio(
+        "Who is studying?",
+        labels,
+        index=labels.index(st.session_state.user_label)
+        if st.session_state.user_label in labels
+        else 0,
+        horizontal=True,
+    )
+    if st.button("Enter App", type="primary", use_container_width=True):
+        st.session_state.user_label = selected_label
+        st.session_state.user_id = USER_OPTIONS[selected_label]
+        st.session_state.user_id_active = st.session_state.user_id
+
+        # Reset launch-scoped pools/requests to avoid stale cross-user state.
+        st.session_state.word_pool_state = None
+        st.session_state.verb_pool_state = None
+        st.session_state.preposition_pool_state = None
+        st.session_state.lexical_requests = {}
+
+        st.session_state.user_selected = True
+        st.rerun()
+
+
 def main():
     """Main app entry point."""
+    if not st.session_state.user_selected:
+        _render_user_entry_screen()
+        return
+
     # Session stats and quit button
     quit_clicked = render_session_stats()
     if quit_clicked:
