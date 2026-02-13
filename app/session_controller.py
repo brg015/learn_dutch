@@ -20,6 +20,14 @@ from core import fsrs
 from core.session_builders.pool_utils import update_pool_state
 
 
+KNOWN_POOL_ATTR_BY_EXERCISE_TYPE = {
+    "word_translation": "word_pool_state",
+    "word_preposition": "preposition_pool_state",
+    "verb_perfectum": "verb_pool_state",
+    "verb_past_tense": "verb_pool_state",
+}
+
+
 def _get_request_for_mode(mode: str) -> LexicalRequest:
     requests = st.session_state.lexical_requests
     request_key = request_key_for_mode(mode)
@@ -117,6 +125,52 @@ def load_next_item() -> None:
     st.session_state.activity = spec.activity_factory(item)
 
 
+def _get_pool_state_for_exercise(exercise_type: str):
+    pool_attr = KNOWN_POOL_ATTR_BY_EXERCISE_TYPE.get(exercise_type)
+    if not pool_attr:
+        return None
+    return getattr(st.session_state, pool_attr, None)
+
+
+def _is_known_no_score(exercise_type: str, word_id: str, card) -> bool:
+    """
+    True when this item comes from a KNOWN pool and should not update FSRS state.
+    """
+    if card is None:
+        return False
+    pool_state = _get_pool_state_for_exercise(exercise_type)
+    return pool_state is not None and word_id in pool_state.known
+
+
+def _build_known_no_score_event(card: fsrs.CardState, feedback_grade: fsrs.FeedbackGrade, latency_ms: int | None) -> dict:
+    retrievability_before = None
+    if card.last_ltm_timestamp is not None and card.review_count > 0:
+        days_since_ltm = fsrs.get_days_since_ltm_review(card.last_ltm_timestamp)
+        retrievability_before = fsrs.calculate_retrievability(card.stability, days_since_ltm)
+
+    return {
+        "word_id": card.word_id,
+        "lemma": card.lemma,
+        "pos": card.pos,
+        "exercise_type": card.exercise_type,
+        "timestamp": datetime.now(timezone.utc),
+        "feedback_grade": feedback_grade,
+        "latency_ms": latency_ms,
+        "stability_before": card.stability,
+        "difficulty_before": card.difficulty,
+        "d_eff_before": card.d_eff,
+        "retrievability_before": retrievability_before,
+        "stability_after": card.stability,
+        "difficulty_after": card.difficulty,
+        "d_eff_after": card.d_eff,
+        "is_ltm_event": 2,  # Known fallback no-score event
+        "session_id": st.session_state.session_id,
+        "session_position": st.session_state.session_position,
+        "presentation_mode": st.session_state.activity.get_presentation_mode(),
+        "user_id": st.session_state.user_id,
+    }
+
+
 def process_feedback(feedback_grade: fsrs.FeedbackGrade) -> None:
     """
     Process user feedback and move to next item.
@@ -131,7 +185,9 @@ def process_feedback(feedback_grade: fsrs.FeedbackGrade) -> None:
             latency_ms = int(elapsed.total_seconds() * 1000)
 
         card = fsrs.load_card_state(st.session_state.user_id, word["word_id"], exercise_type)
-        if card is None:
+        is_known_no_score = _is_known_no_score(exercise_type, word["word_id"], card)
+
+        if card is None and not is_known_no_score:
             card = fsrs.CardState(
                 user_id=st.session_state.user_id,
                 word_id=word["word_id"],
@@ -148,24 +204,27 @@ def process_feedback(feedback_grade: fsrs.FeedbackGrade) -> None:
                 stm_success_count_today=0
             )
 
-        updated_card, event_data = fsrs.process_review(card, feedback_grade)
-        event_data["user_id"] = st.session_state.user_id
-        event_data["latency_ms"] = latency_ms
-        event_data["session_id"] = st.session_state.session_id
-        event_data["session_position"] = st.session_state.session_position
-        event_data["presentation_mode"] = st.session_state.activity.get_presentation_mode()
+        if is_known_no_score:
+            event_data = _build_known_no_score_event(card, feedback_grade, latency_ms)
+        else:
+            updated_card, event_data = fsrs.process_review(card, feedback_grade)
+            event_data["user_id"] = st.session_state.user_id
+            event_data["latency_ms"] = latency_ms
+            event_data["session_id"] = st.session_state.session_id
+            event_data["session_position"] = st.session_state.session_position
+            event_data["presentation_mode"] = st.session_state.activity.get_presentation_mode()
+            st.session_state.cards_buffer.append(updated_card)
 
-        st.session_state.cards_buffer.append(updated_card)
         st.session_state.review_events_buffer.append(event_data)
 
-        if exercise_type == "word_translation":
+        if not is_known_no_score and exercise_type == "word_translation":
             if st.session_state.word_pool_state is not None:
                 update_pool_state(
                     st.session_state.word_pool_state,
                     word["word_id"],
                     feedback_grade
                 )
-        elif exercise_type in ("verb_perfectum", "verb_past_tense"):
+        elif not is_known_no_score and exercise_type in ("verb_perfectum", "verb_past_tense"):
             if st.session_state.verb_pool_state is not None:
                 word_id = word["word_id"]
                 buffer = st.session_state.verb_response_buffer
@@ -190,7 +249,7 @@ def process_feedback(feedback_grade: fsrs.FeedbackGrade) -> None:
                         word_id,
                         combined
                     )
-        elif exercise_type == "word_preposition":
+        elif not is_known_no_score and exercise_type == "word_preposition":
             if st.session_state.preposition_pool_state is not None:
                 update_pool_state(
                     st.session_state.preposition_pool_state,

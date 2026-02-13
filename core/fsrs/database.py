@@ -308,6 +308,12 @@ def batch_log_review_events(events: list[dict]):
     session = get_session()
     try:
         for event in events:
+            is_ltm_event_value = event.get("is_ltm_event", 0)
+            if isinstance(is_ltm_event_value, bool):
+                is_ltm_event_value = 1 if is_ltm_event_value else 0
+            else:
+                is_ltm_event_value = int(is_ltm_event_value)
+
             review_event = ReviewEventModel(
                 user_id=event['user_id'],
                 word_id=event['word_id'],
@@ -324,7 +330,7 @@ def batch_log_review_events(events: list[dict]):
                 stability_after=event['stability_after'],
                 difficulty_after=event['difficulty_after'],
                 d_eff_after=event['d_eff_after'],
-                is_ltm_event=1 if event['is_ltm_event'] else 0,
+                is_ltm_event=is_ltm_event_value,
                 session_id=event.get('session_id'),
                 session_position=event.get('session_position'),
                 presentation_mode=event.get('presentation_mode')

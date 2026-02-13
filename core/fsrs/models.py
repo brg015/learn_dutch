@@ -5,9 +5,8 @@ Defines CardState and ReviewEvent models for Postgres persistence.
 Maps to the previously SQLite-based schema.
 """
 
-from sqlalchemy import Column, String, Integer, Float, Text, ForeignKey, DateTime, Boolean
-from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import relationship
+from sqlalchemy import Column, DateTime, Float, Integer, String
+from sqlalchemy.orm import declarative_base
 
 Base = declarative_base()
 
@@ -61,7 +60,7 @@ class ReviewEvent(Base):
     # Primary key
     id = Column(Integer, primary_key=True, autoincrement=True)
 
-    # User scope and foreign key references
+    # User scope and card identifiers
     user_id = Column(String(255), nullable=False)
     word_id = Column(String(255), nullable=False)
     exercise_type = Column(String(50), nullable=False)
@@ -87,7 +86,7 @@ class ReviewEvent(Base):
     d_eff_after = Column(Float, nullable=False)
 
     # Event type
-    is_ltm_event = Column(Integer, nullable=False)  # 1 for LTM, 0 for STM
+    is_ltm_event = Column(Integer, nullable=False)  # 1 for LTM, 0 for STM, 2 for KNOWN no-score fallback
 
     # Session context (optional, for analytics)
     session_id = Column(String(255), nullable=True)

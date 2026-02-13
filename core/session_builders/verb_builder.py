@@ -124,6 +124,7 @@ def create_verb_tense_session(
         key=lambda word_id: pool_state.ltm_scores.get(word_id, 1.0)
     )
     session_ids = list(ltm_ids[:ltm_target])
+    selected_ids = set(session_ids)
 
     if len(session_ids) < session_size:
         stm_ids = list(pool_state.stm)
@@ -131,20 +132,34 @@ def create_verb_tense_session(
         for word_id in stm_ids:
             if len(session_ids) >= session_size:
                 break
+            if word_id in selected_ids:
+                continue
             session_ids.append(word_id)
+            selected_ids.add(word_id)
 
     if len(session_ids) < session_size:
         remaining = session_size - len(session_ids)
         new_ids = list(pool_state.new)
         if new_ids:
-            session_ids.extend(random.sample(new_ids, min(remaining, len(new_ids))))
+            sampled_new = random.sample(new_ids, min(remaining, len(new_ids)))
+            session_ids.extend(sampled_new)
+            selected_ids.update(sampled_new)
 
     if len(session_ids) < session_size:
         remaining = session_size - len(session_ids)
-        selected_ids = set(session_ids)
         remaining_ltm_ids = [word_id for word_id in ltm_ids if word_id not in selected_ids]
         if remaining_ltm_ids:
-            session_ids.extend(remaining_ltm_ids[:remaining])
+            sampled_ltm = remaining_ltm_ids[:remaining]
+            session_ids.extend(sampled_ltm)
+            selected_ids.update(sampled_ltm)
+
+    if len(session_ids) < session_size:
+        remaining = session_size - len(session_ids)
+        known_ids = [word_id for word_id in pool_state.known if word_id not in selected_ids]
+        if known_ids:
+            sampled_known = random.sample(known_ids, min(remaining, len(known_ids)))
+            session_ids.extend(sampled_known)
+            selected_ids.update(sampled_known)
 
     if not session_ids:
         return [], "No verbs available. Learn more verb meanings to practice conjugation!"
